@@ -36,7 +36,7 @@ workflow @after create:gmail/Email {
     this.thread_id @as thread_id
     console.log("Email arrived:", emailBody)
 
-    for (c in {hubspot/Contact {}}) {
+    for c in {hubspot/Contact? {}} {
       if (emailSender <> c.email) {
         {emailAgent {message emailBody}} @as result
         if (result.result == "success") {
