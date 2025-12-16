@@ -7,6 +7,12 @@ module agenticcrm.core
     {"model": "gpt-4o"}
 }}
 
+@public agent emailExtractorAgent {
+  llm "llm01",
+  role "You are an AI responsible for extracting information from email."
+  instruction "You "
+}
+
 @public agent emailAgent {
   llm "llm01",
   role "You are an app responsible for creating or updating hubspot contact based on email received."
