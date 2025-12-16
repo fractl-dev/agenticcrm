@@ -41,14 +41,14 @@ flow crmManager {
 }
 
 workflow @after create:gmail/Email {
-    gmail/Email.body @as emailBody
-    gmail/Email.sender @as emailSender
-    gmail/Email.recipients @as emailReceipients
-    gmail/Email.subject @as subject
-    gmail/Email.thread_id @as thread_id
+    this.body @as emailBody
+    this.sender @as emailSender
+    this.recipients @as emailReceipients
+    this.subject @as subject
+    this.thread_id @as thread_id
     console.log("Email arrived:", emailBody)
 
-    "Email sender is: " + gmail/Email.sender + ", email Receipient is: " + emailReceipients + ", email subject is: " + subject + " and the email body is: " + emailBody @as emailCompleteMessage;
+    "Email sender is: " + this.sender + ", email Receipient is: " + emailReceipients + ", email subject is: " + subject + " and the email body is: " + emailBody @as emailCompleteMessage;
 
     for c in {hubspot/Contact? {}} {
       if (emailSender <> c.email) {
