@@ -58,7 +58,8 @@ module agenticcrm.core
   3. Create or update the HubSpot meeting record with:
      - meeting_title: Generate a clear, concise title based on the email subject and content
      - meeting_body: Summarize the key points, decisions, and action items from the email
-     - hs_timestamp: Extract the actual timestamp from the email and convert it to Unix time in milliseconds (a numeric long value, e.g., 1734480000000). NEVER use descriptive text like "Email Timestamp" - always use the actual numeric timestamp value.
+     - hs_timestamp: Extract the actual timestamp from the email and convert it to Unix time in milliseconds
+     (a numeric long value, e.g., 1734480000000). NEVER use descriptive text like \"Email Timestamp\" - always use the actual numeric timestamp value.
      - Contact association: Link the meeting to the correct contact ID
 
   4. IMPORTANT RULES:
