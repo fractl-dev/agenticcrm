@@ -13,22 +13,28 @@ module agenticcrm.core
   instruction "Your task is to process email information and manage HubSpot contacts intelligently.
 
   STEPS:
-  1. Extract relevant contact information from the email, including:
-     - Full name
-     - Email address
-     - HubSpot IDs or other identifiers (if mentioned in the email body)
+  1. Identify which email address represents the external contact:
+     - If the email sender is pratik@fractl.io (the admin), then the contact is the RECIPIENT
+     - If the email sender is NOT pratik@fractl.io, then the contact is the SENDER
+     - Extract the external contact's full name and email address
 
-  2. Determine if a HubSpot contact should be created or updated:
+  2. Extract additional contact information from the email body:
+     - Full name (if not already in email headers)
+     - HubSpot IDs or other identifiers (if mentioned in the email body)
+     - Any other relevant contact details
+
+  3. Determine if a HubSpot contact should be created or updated:
      - Check if a contact already exists in HubSpot with the extracted email address
      - If the contact exists and the email contains new information, update the existing contact
-     - If the contact doesn't exist and the sender/recipient appears to be a legitimate business contact, create a new contact
+     - If the contact doesn't exist and the person appears to be a legitimate business contact, create a new contact
 
-  3. IMPORTANT VALIDATION RULES:
+  4. IMPORTANT VALIDATION RULES:
      - Do NOT create empty contacts without a name and email address
      - Do NOT create a contact for pratik@fractl.io (the admin user)
      - Only create contacts for external parties who are legitimate business prospects or partners
+     - When sender is pratik@fractl.io, focus on the recipient as the contact
 
-  4. Parse the email body carefully to extract all relevant contact details before taking action.",
+  5. Parse the email body carefully to extract all relevant contact details before taking action.",
   tools [hubspot/Contact]
 }
 
@@ -45,13 +51,14 @@ module agenticcrm.core
      - Key decisions or breakthrough moments from email exchanges
 
   2. Find the appropriate HubSpot contact:
-     - Search for the contact using the email address from the sender or relevant recipient
+     - If the email sender is pratik@fractl.io (the admin), search for the contact using the RECIPIENT email address
+     - If the email sender is NOT pratik@fractl.io, search for the contact using the SENDER email address
      - Retrieve the contact ID for association
 
   3. Create or update the HubSpot meeting record with:
      - meeting_title: Generate a clear, concise title based on the email subject and content
      - meeting_body: Summarize the key points, decisions, and action items from the email
-     - Timestamp: Use the email timestamp in either Unix milliseconds or UTC format
+     - hs_timestamp: Extract the actual timestamp from the email and convert it to Unix time in milliseconds (a numeric long value, e.g., 1734480000000). NEVER use descriptive text like "Email Timestamp" - always use the actual numeric timestamp value.
      - Contact association: Link the meeting to the correct contact ID
 
   4. IMPORTANT RULES:
@@ -81,13 +88,5 @@ workflow @after create:gmail/Email {
 
     "Email sender is: " + this.sender + ", email recipient is: " + emailRecipients + ", email subject is: " + subject + ", and the email body is: " + emailBody @as emailCompleteMessage;
 
-    // for c in {hubspot/Contact? {}} {
-    //  if (emailSender <> c.email) {
-    //    {crmManager {message emailCompleteMessage}}
-    //  }
-    // }
-
-    if (emailSender <> "pratik@fractl.io") {
-        {crmManager {message emailCompleteMessage}}
-    }
+    {crmManager {message emailCompleteMessage}}
 }
