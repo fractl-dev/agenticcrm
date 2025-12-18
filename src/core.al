@@ -89,48 +89,32 @@ record MeetingInfo {
 @public agent findExistingContact {
   llm "llm01",
   role "You search for existing HubSpot contacts by querying all contacts and looping through them."
-  instruction "Your ONLY task is to find if a contact with email {{contactEmail}} already exists in HubSpot.
+  instruction "Your task is to search for a contact with email {{contactEmail}} in HubSpot.
 
-  YOU MUST FOLLOW THIS EXACT PROCESS:
+  STEP 1: USE THE HUBSPOT TOOL TO QUERY ALL CONTACTS
+  - Call the hubspot/Contact tool with a query operation
+  - Query all contacts to get the full list
+  - You will receive a list of contact objects
 
-  STEP 1: QUERY ALL EXISTING CONTACTS
-  - Execute this query: {hubspot/Contact? {}}
-  - This will return a list of ALL contacts in HubSpot
-  - Each contact has this structure:
-    {
-      \"id\": \"350155650790\",
-      \"properties\": {
-        \"email\": \"ranga@fractl.io\",
-        \"firstname\": \"Ranga\",
-        \"lastname\": \"Rao\"
-      }
-    }
+  STEP 2: EXAMINE EACH CONTACT IN THE RESULTS
+  - Loop through each contact returned from the query
+  - For each contact, look at the properties.email field
+  - Check if properties.email matches {{contactEmail}}
+  - Remember: email is at contact.properties.email (not contact.email)
 
-  STEP 2: LOOP THROUGH THE RESULTS TO FIND A MATCH
-  - Go through each contact one by one
-  - For EACH contact, check: contact.properties.email
-  - Compare contact.properties.email with the target email: {{contactEmail}}
-  - The email is nested under 'properties', NOT at the top level
-  - If you find a match where contact.properties.email == {{contactEmail}}:
-    * Extract the contact.id (this is at the TOP level, not in properties)
-    * Remember this ID
+  STEP 3: IF YOU FIND A MATCHING CONTACT
+  - Extract the id field from that contact (it's at the top level)
+  - Return contactFound: true
+  - Return existingContactId: the id value (example: \"350155650790\")
 
-  STEP 3: RETURN YOUR FINDINGS
-  - If you FOUND a matching contact:
-    * Set contactFound = true
-    * Set existingContactId = the contact.id you found (e.g., \"350155650790\")
-  - If you did NOT find any matching contact:
-    * Set contactFound = false
-    * Do not include existingContactId
+  STEP 4: IF NO CONTACT MATCHES
+  - Return contactFound: false
 
-  CRITICAL RULES:
-  - You MUST query ALL contacts first using {hubspot/Contact? {}}
-  - You MUST loop through the results to find matches
-  - Do NOT create any contacts - this is search ONLY
-  - Do NOT update any contacts - this is search ONLY
-  - Access email at: contact.properties.email
-  - Access ID at: contact.id (top level)
-  - If no match is found, contactFound MUST be false",
+  IMPORTANT:
+  - You have access to the hubspot/Contact tool - USE IT to query contacts
+  - Return actual ID values from the query results
+  - Do not return code, syntax, or placeholder text
+  - The existingContactId must be a real ID like \"350155650790\"",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
@@ -147,28 +131,22 @@ decision contactExistsCheck {
 
 @public agent updateExistingContact {
   llm "llm01",
-  role "You update existing HubSpot contacts."
-  instruction "Your ONLY task is to update an existing contact if new information is available.
+  role "You update existing HubSpot contacts and return the contact ID."
+  instruction "Update the existing contact if needed, then return its ID.
 
-  CONTACT TO UPDATE:
-  - Contact ID: {{existingContactId}}
-  - New information from email: firstName={{firstName}}, lastName={{lastName}}
+  CONTACT INFORMATION:
+  - Existing Contact ID: {{existingContactId}}
+  - First Name: {{firstName}}
+  - Last Name: {{lastName}}
 
-  STEP 1: CHECK IF UPDATE IS NEEDED
-  - Query the existing contact using {{existingContactId}}
-  - Compare current data with new information
+  WHAT TO DO:
+  - You can optionally update the contact with new information using the hubspot/Contact tool
+  - Then return the contact ID
 
-  STEP 2: UPDATE CONTACT (if needed)
-  - If there's new information, UPDATE the contact using {{existingContactId}}
-  - If no new information, skip update
-
-  STEP 3: RETURN CONTACT ID
-  - Return finalContactId with the value of {{existingContactId}}
-  - This will be used by meeting creation
-
-  CRITICAL RULES:
-  - Update ONLY if there's new information
-  - Access properties at contact.properties.*",
+  RETURN VALUE:
+  - Set finalContactId to the value of {{existingContactId}}
+  - This must be the actual ID string (like \"350155650790\")
+  - Do not return code or syntax",
   responseSchema agenticcrm.core/ContactResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
@@ -176,26 +154,24 @@ decision contactExistsCheck {
 
 @public agent createNewContact {
   llm "llm01",
-  role "You create new HubSpot contacts."
-  instruction "Your ONLY task is to create a new contact.
+  role "You create new HubSpot contacts and return the contact ID."
+  instruction "Create a new contact in HubSpot and return its ID.
 
   CONTACT INFORMATION:
   - Email: {{contactEmail}}
   - First Name: {{firstName}}
   - Last Name: {{lastName}}
 
-  STEP 1: CREATE NEW CONTACT
-  - CREATE a new contact with the information above
-  - Use field names: email, first_name, last_name
+  WHAT TO DO:
+  - Use the hubspot/Contact tool to create a new contact
+  - Create the contact with email, first_name, and last_name
+  - Extract the id from the created contact object
+  - Return that id as finalContactId
 
-  STEP 2: RETURN CONTACT ID
-  - Get the newly created contact.id
-  - Return finalContactId with the contact ID
-  - This will be used by meeting creation
-
-  CRITICAL RULES:
-  - Create ONLY - do NOT search
-  - Access properties at contact.properties.*",
+  RETURN VALUE:
+  - Set finalContactId to the actual ID of the created contact
+  - This must be a real ID string (like \"350155650790\")
+  - Do not return code or syntax",
   responseSchema agenticcrm.core/ContactResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
