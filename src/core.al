@@ -88,12 +88,15 @@ record MeetingInfo {
 
 @public agent findExistingContact {
   llm "llm01",
-  role "You search for existing HubSpot contacts."
-  instruction "Your ONLY task is to search for an existing contact in HubSpot with email {{contactEmail}}.
+  role "You search for existing HubSpot contacts by querying all contacts and looping through them."
+  instruction "Your ONLY task is to find if a contact with email {{contactEmail}} already exists in HubSpot.
 
-  STEP 1: QUERY ALL HUBSPOT CONTACTS
-  - Use: {hubspot/Contact? {}}
-  - This returns all contacts with structure:
+  YOU MUST FOLLOW THIS EXACT PROCESS:
+
+  STEP 1: QUERY ALL EXISTING CONTACTS
+  - Execute this query: {hubspot/Contact? {}}
+  - This will return a list of ALL contacts in HubSpot
+  - Each contact has this structure:
     {
       \"id\": \"350155650790\",
       \"properties\": {
@@ -103,19 +106,31 @@ record MeetingInfo {
       }
     }
 
-  STEP 2: LOOP THROUGH CONTACTS TO FIND MATCH
-  - For each contact in the results, access: contact.properties.email
-  - Compare contact.properties.email with {{contactEmail}}
-  - If match found, extract contact.id (the top-level id)
+  STEP 2: LOOP THROUGH THE RESULTS TO FIND A MATCH
+  - Go through each contact one by one
+  - For EACH contact, check: contact.properties.email
+  - Compare contact.properties.email with the target email: {{contactEmail}}
+  - The email is nested under 'properties', NOT at the top level
+  - If you find a match where contact.properties.email == {{contactEmail}}:
+    * Extract the contact.id (this is at the TOP level, not in properties)
+    * Remember this ID
 
-  STEP 3: RETURN THE RESULTS
-  - If contact found: return contactFound=true and existingContactId with the contact ID
-  - If contact NOT found: return contactFound=false (existingContactId can be omitted)
+  STEP 3: RETURN YOUR FINDINGS
+  - If you FOUND a matching contact:
+    * Set contactFound = true
+    * Set existingContactId = the contact.id you found (e.g., \"350155650790\")
+  - If you did NOT find any matching contact:
+    * Set contactFound = false
+    * Do not include existingContactId
 
   CRITICAL RULES:
-  - Search ONLY - do NOT create or update anything
-  - MUST query ALL contacts and loop through them
-  - Access email at contact.properties.email (NOT contact.email)",
+  - You MUST query ALL contacts first using {hubspot/Contact? {}}
+  - You MUST loop through the results to find matches
+  - Do NOT create any contacts - this is search ONLY
+  - Do NOT update any contacts - this is search ONLY
+  - Access email at: contact.properties.email
+  - Access ID at: contact.id (top level)
+  - If no match is found, contactFound MUST be false",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
@@ -191,29 +206,46 @@ decision contactExistsCheck {
   role "You parse email content to extract meeting information."
   instruction "Your ONLY task is to analyze the email and prepare meeting information.
 
-  STEP 1: EXTRACT EMAIL SUBJECT
-  - Look for the email subject in the context
-  - This will be the meeting title
+  MESSAGE FORMAT:
+  The message will look like this:
+  'Email sender is: ..., email recipient is: ..., email subject is: Sixth meeting notes, and the email body is: Hi Ranga,...'
 
-  STEP 2: ANALYZE EMAIL BODY
-  - Read the email body
+  STEP 1: EXTRACT EMAIL SUBJECT
+  - Find the text that comes AFTER 'email subject is:' and BEFORE ', and the email body is:'
+  - This entire text is the meeting title
+  - Example: 'email subject is: Sixth meeting notes of the evening, and the email body is:...'
+    → meetingTitle = 'Sixth meeting notes of the evening'
+
+  STEP 2: EXTRACT EMAIL BODY
+  - Find the text that comes AFTER 'and the email body is:'
+  - This is the full email body text
+  - Example: 'and the email body is: Hi Ranga,... Best, Pratik'
+    → This entire text is the email body
+
+  STEP 3: ANALYZE THE EMAIL BODY AND CREATE SUMMARY
+  - Read the extracted email body from step 2
   - Identify:
     * Meeting discussions
     * Key decisions
-    * Action items
+    * Action items mentioned
     * Important points
-
-  STEP 3: PREPARE MEETING SUMMARY
-  - Create a concise summary of the email
-  - Focus on key points and action items
-  - This will be the meeting body
+  - Create a concise summary focusing on these elements
 
   STEP 4: RETURN MEETING INFORMATION
-  - Return meetingTitle with the email subject
-  - Return meetingBody with the summary
+  - Return meetingTitle: the exact subject text from step 1
+  - Return meetingBody: the summary you created in step 3
+
+  EXAMPLE:
+  Input: 'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: Ranga Rao <ranga@fractl.io>, email subject is: Project Discussion, and the email body is: Hi Ranga, We discussed the project timeline. Action items: 1. Complete design by Friday. Best, Pratik'
+
+  Output:
+  - meetingTitle = 'Project Discussion'
+  - meetingBody = 'Discussed project timeline. Action items: Complete design by Friday.'
 
   CRITICAL RULES:
-  - Parse ONLY - do NOT create anything",
+  - Extract subject from the text AFTER 'email subject is:' and BEFORE ', and the email body is:'
+  - Extract body from the text AFTER 'and the email body is:'
+  - Parse ONLY - do NOT create meetings or contacts",
   responseSchema agenticcrm.core/MeetingInfo,
   retry agenticcrm.core/classifyRetry
 }
