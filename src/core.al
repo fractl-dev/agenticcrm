@@ -17,6 +17,26 @@ agentlang/retry classifyRetry {
   }
 }
 
+record ContactInfo {
+    contactEmail String,
+    firstName String,
+    lastName String
+}
+
+record ContactSearchResult {
+    contactFound Boolean,
+    existingContactId String @optional
+}
+
+record ContactResult {
+    finalContactId String
+}
+
+record MeetingInfo {
+    meetingTitle String,
+    meetingBody String
+}
+
 @public agent parseEmailInfo {
   llm "llm01",
   role "You extract email addresses and names from email messages."
@@ -38,27 +58,23 @@ agentlang/retry classifyRetry {
   - Example: first_name='Ranga', last_name='Rao'
 
   STEP 4: RETURN THE EXTRACTED INFORMATION
-  - Return in this EXACT format:
-    'Extracted: Email=ranga@fractl.io, FirstName=Ranga, LastName=Rao'
-  - This format is MANDATORY
+  - Return contactEmail (the email address)
+  - Return firstName (first name only)
+  - Return lastName (last name only)
 
   CRITICAL RULES:
   - Extract ONLY - do NOT query or create anything
-  - NEVER extract pratik@fractl.io as a contact
-  - ALWAYS return the information in the exact format specified",
+  - NEVER extract pratik@fractl.io as a contact",
+  responseSchema agenticcrm.core/ContactInfo,
   retry agenticcrm.core/classifyRetry
 }
 
 @public agent findExistingContact {
   llm "llm01",
   role "You search for existing HubSpot contacts."
-  instruction "Your ONLY task is to search for an existing contact in HubSpot.
+  instruction "Your ONLY task is to search for an existing contact in HubSpot with email {{contactEmail}}.
 
-  STEP 1: EXTRACT EMAIL FROM PREVIOUS AGENT
-  - Look for the format: 'Extracted: Email=ranga@fractl.io, FirstName=Ranga, LastName=Rao'
-  - Extract the email address (e.g., 'ranga@fractl.io')
-
-  STEP 2: QUERY ALL HUBSPOT CONTACTS
+  STEP 1: QUERY ALL HUBSPOT CONTACTS
   - Use: {hubspot/Contact? {}}
   - This returns all contacts with structure:
     {
@@ -70,58 +86,85 @@ agentlang/retry classifyRetry {
       }
     }
 
-  STEP 3: LOOP THROUGH CONTACTS TO FIND MATCH
+  STEP 2: LOOP THROUGH CONTACTS TO FIND MATCH
   - For each contact in the results, access: contact.properties.email
-  - Compare contact.properties.email with the target email from Step 1
+  - Compare contact.properties.email with {{contactEmail}}
   - If match found, extract contact.id (the top-level id)
 
-  STEP 4: RETURN THE RESULT
-  - If contact found, return: 'Found: ID=350155650790, Email=ranga@fractl.io'
-  - If contact NOT found, return: 'NotFound: Email=ranga@fractl.io, FirstName=Ranga, LastName=Rao'
-  - Use the EXACT format specified
+  STEP 3: RETURN THE RESULTS
+  - If contact found: return contactFound=true and existingContactId with the contact ID
+  - If contact NOT found: return contactFound=false (existingContactId can be omitted)
 
   CRITICAL RULES:
   - Search ONLY - do NOT create or update anything
   - MUST query ALL contacts and loop through them
-  - Access email at contact.properties.email (NOT contact.email)
-  - Return in the EXACT format specified",
+  - Access email at contact.properties.email (NOT contact.email)",
+  responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
 }
 
-@public agent createOrUpdateContact {
+decision contactExistsCheck {
+  case (contactFound == true) {
+    ContactExists
+  }
+  case (contactFound == false) {
+    ContactNotFound
+  }
+}
+
+@public agent updateExistingContact {
   llm "llm01",
-  role "You create or update HubSpot contacts."
-  instruction "Your ONLY task is to create a new contact or update an existing one.
+  role "You update existing HubSpot contacts."
+  instruction "Your ONLY task is to update an existing contact if new information is available.
 
-  STEP 1: CHECK WHAT THE PREVIOUS AGENT FOUND
-  - Look for either:
-    * 'Found: ID=350155650790, Email=ranga@fractl.io' (contact exists)
-    * 'NotFound: Email=ranga@fractl.io, FirstName=Ranga, LastName=Rao' (contact doesn't exist)
+  CONTACT TO UPDATE:
+  - Contact ID: {{existingContactId}}
+  - New information from email: firstName={{firstName}}, lastName={{lastName}}
 
-  STEP 2A: IF CONTACT EXISTS (Found)
-  - Extract the contact ID
-  - You can optionally UPDATE the contact if new information is available
-  - Get the contact information
+  STEP 1: CHECK IF UPDATE IS NEEDED
+  - Query the existing contact using {{existingContactId}}
+  - Compare current data with new information
 
-  STEP 2B: IF CONTACT DOESN'T EXIST (NotFound)
-  - Extract: Email, FirstName, LastName from the NotFound message
-  - CREATE a new contact with:
-    * email: the extracted email
-    * first_name: the extracted FirstName
-    * last_name: the extracted LastName
-  - Get the newly created contact information
+  STEP 2: UPDATE CONTACT (if needed)
+  - If there's new information, UPDATE the contact using {{existingContactId}}
+  - If no new information, skip update
 
-  STEP 3: RETURN CONTACT INFORMATION
-  - Return in this EXACT format:
-    'Contact: ID=350155650790, Email=ranga@fractl.io, Name=Ranga Rao'
-  - This format is MANDATORY - the next agents depend on it
+  STEP 3: RETURN CONTACT ID
+  - Return finalContactId with the value of {{existingContactId}}
+  - This will be used by meeting creation
 
   CRITICAL RULES:
-  - Create or update ONLY - do NOT search
-  - ALWAYS return contact information in the exact format
-  - Access properties at contact.properties.email, contact.properties.firstname, contact.properties.lastname
-  - Use top-level contact.id for the ID",
+  - Update ONLY if there's new information
+  - Access properties at contact.properties.*",
+  responseSchema agenticcrm.core/ContactResult,
+  retry agenticcrm.core/classifyRetry,
+  tools [hubspot/Contact]
+}
+
+@public agent createNewContact {
+  llm "llm01",
+  role "You create new HubSpot contacts."
+  instruction "Your ONLY task is to create a new contact.
+
+  CONTACT INFORMATION:
+  - Email: {{contactEmail}}
+  - First Name: {{firstName}}
+  - Last Name: {{lastName}}
+
+  STEP 1: CREATE NEW CONTACT
+  - CREATE a new contact with the information above
+  - Use field names: email, first_name, last_name
+
+  STEP 2: RETURN CONTACT ID
+  - Get the newly created contact.id
+  - Return finalContactId with the contact ID
+  - This will be used by meeting creation
+
+  CRITICAL RULES:
+  - Create ONLY - do NOT search
+  - Access properties at contact.properties.*",
+  responseSchema agenticcrm.core/ContactResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
 }
@@ -149,13 +192,12 @@ agentlang/retry classifyRetry {
   - This will be the meeting body
 
   STEP 4: RETURN MEETING INFORMATION
-  - Return in this EXACT format:
-    'Meeting: Title=[email subject], Body=[summary of key points and action items]'
-  - This format is MANDATORY
+  - Return meetingTitle with the email subject
+  - Return meetingBody with the summary
 
   CRITICAL RULES:
-  - Parse ONLY - do NOT create anything
-  - Return meeting information in the exact format specified",
+  - Parse ONLY - do NOT create anything",
+  responseSchema agenticcrm.core/MeetingInfo,
   retry agenticcrm.core/classifyRetry
 }
 
@@ -164,27 +206,23 @@ agentlang/retry classifyRetry {
   role "You create HubSpot meetings and associate them with contacts."
   instruction "Your ONLY task is to create a meeting and link it to the contact.
 
-  STEP 1: EXTRACT CONTACT ID FROM CONTEXT
-  - Look for: 'Contact: ID=350155650790, Email=ranga@fractl.io, Name=Ranga Rao'
-  - Extract the contact ID (e.g., '350155650790')
-  - This is REQUIRED
+  MEETING INFORMATION:
+  - Contact ID: {{finalContactId}}
+  - Meeting Title: {{meetingTitle}}
+  - Meeting Body: {{meetingBody}}
 
-  STEP 2: EXTRACT MEETING INFORMATION FROM CONTEXT
-  - Look for: 'Meeting: Title=[...], Body=[...]'
-  - Extract the Title and Body
-
-  STEP 3: GENERATE TIMESTAMP
+  STEP 1: GENERATE TIMESTAMP
   - Get the current date/time
   - Convert to Unix timestamp in milliseconds
   - Example: 1734434400000
   - MUST be a numeric value, NOT text
 
-  STEP 4: CREATE THE MEETING
+  STEP 2: CREATE THE MEETING
   - Create meeting with these fields:
-    * meeting_title: the extracted Title
-    * meeting_body: the extracted Body
+    * meeting_title: use {{meetingTitle}}
+    * meeting_body: use {{meetingBody}}
     * timestamp: the numeric Unix timestamp
-    * associated_contacts: the contact ID from Step 1
+    * associated_contacts: use {{finalContactId}}
   - Example:
     {hubspot/Meeting {
       meeting_title 'Re: Further Improvements on proposal',
@@ -195,7 +233,6 @@ agentlang/retry classifyRetry {
 
   CRITICAL RULES:
   - Create ONLY - do NOT search for contacts
-  - MUST have contact ID from previous agent
   - Use numeric timestamp in milliseconds
   - Use 'timestamp' field name (NOT 'hs_timestamp')
   - Use 'associated_contacts' field with contact ID",
@@ -203,10 +240,12 @@ agentlang/retry classifyRetry {
   tools [hubspot/Meeting]
 }
 
-// FLOWS: Connect agents in sequence
+// FLOWS: Connect agents with decision-based routing
 flow contactFlow {
   parseEmailInfo --> findExistingContact
-  findExistingContact --> createOrUpdateContact
+  findExistingContact --> contactExistsCheck
+  contactExistsCheck --> "ContactExists" updateExistingContact
+  contactExistsCheck --> "ContactNotFound" createNewContact
 }
 
 flow meetingFlow {
@@ -219,7 +258,7 @@ flow crmManager {
 
 // Orchestrator agent
 @public agent crmManager {
-  role "You coordinate the contact and meeting creation workflow."
+  role "You coordinate the contact and meeting creation workflow using deterministic decision-based routing."
 }
 
 // Workflow: Trigger on email arrival
