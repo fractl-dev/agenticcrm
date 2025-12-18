@@ -23,13 +23,28 @@ module agenticcrm.core
 
   STEP 2: QUERY ALL EXISTING HUBSPOT CONTACTS (DO NOT SKIP)
   - FIRST, query all contacts: {hubspot/Contact? {}}
-  - This returns all contacts with their properties
+  - This returns an array of contacts. Each contact has this EXACT structure:
+    {
+      "id": "contact_id_here",
+      "properties": {
+        "email": "ranga@fractl.io",
+        "firstname": "Ranga",
+        "lastname": "Rao",
+        "hs_object_id": "350155650790"
+      },
+      "createdAt": "...",
+      "updatedAt": "...",
+      "archived": false
+    }
+  - IMPORTANT: The email is at properties.email, NOT at the top level
   - You MUST do this before creating any contact
 
   STEP 3: SEARCH FOR EXISTING CONTACT BY EMAIL
   - Loop through all returned contacts from Step 2
-  - Compare the 'email' property of each contact with the email from Step 1
-  - If you find a match, save that contact's 'id' field
+  - For each contact, access the email at: contact.properties.email (NOT contact.email)
+  - Compare contact.properties.email with the email from Step 1
+  - If you find a match, save that contact's 'id' field (the top-level id)
+  - Example: if contact.properties.email == 'ranga@fractl.io', then save contact.id
 
   STEP 4: EXTRACT CONTACT NAME AND DETAILS
   - Parse name from email header: 'Ranga Rao <ranga@fractl.io>' → 'Ranga Rao'
@@ -48,13 +63,12 @@ module agenticcrm.core
     * Get the newly created contact information
 
   STEP 6: RETURN CONTACT INFORMATION (CRITICAL!)
-  - After creating/updating, you MUST provide the contact information to the next agent
-  - Return this information in your response:
-    * Contact ID (e.g., '12345678')
-    * Contact email (e.g., 'ranga@fractl.io')
-    * Contact first name (e.g., 'Ranga')
-    * Contact last name (e.g., 'Rao')
-  - Format: 'Contact processed: ID=12345678, Email=ranga@fractl.io, Name=Ranga Rao'
+  - After creating/updating, you get back a contact object with the structure shown in Step 2
+  - Extract the contact.id from the returned contact
+  - You MUST provide the contact information to the next agent in your response
+  - Return this information in this EXACT format:
+    'Contact processed: ID=<contact.id>, Email=<contact.properties.email>, Name=<contact.properties.firstname> <contact.properties.lastname>'
+  - Example: 'Contact processed: ID=350155650790, Email=ranga@fractl.io, Name=Ranga Rao'
   - This information will be passed to the meeting notes agent
 
   CRITICAL RULES:
@@ -63,6 +77,8 @@ module agenticcrm.core
   - NEVER create contact for pratik@fractl.io
   - ALWAYS extract email from angle brackets <email>
   - ALWAYS provide email, first_name, and last_name when creating
+  - ALWAYS access properties using: contact.properties.email, contact.properties.firstname, contact.properties.lastname
+  - ALWAYS use the top-level contact.id for the ID
   - ALWAYS return the contact information at the end",
   tools [hubspot/Contact]
 }
@@ -84,9 +100,22 @@ module agenticcrm.core
   STEP 1: EXTRACT CONTACT ID FROM PREVIOUS AGENT
   - Look in the context for the contact information from emailExtractorAgent
   - Find the Contact ID from the previous agent's output
-  - Example format: 'Contact processed: ID=12345678, Email=ranga@fractl.io, Name=Ranga Rao'
-  - Extract the ID value (e.g., '12345678')
-  - If you cannot find the contact ID, query all contacts to find it by email as a fallback
+  - Example format: 'Contact processed: ID=350155650790, Email=ranga@fractl.io, Name=Ranga Rao'
+  - Extract the ID value (e.g., '350155650790')
+
+  FALLBACK (only if contact ID not found in previous agent output):
+  - Query all contacts: {hubspot/Contact? {}}
+  - This returns contacts with structure:
+    {
+      "id": "contact_id",
+      "properties": {
+        "email": "ranga@fractl.io",
+        "firstname": "Ranga",
+        "lastname": "Rao"
+      }
+    }
+  - Loop through contacts and compare contact.properties.email with the target email
+  - When match found, use contact.id (the top-level id)
 
   STEP 2: PARSE EMAIL CONTENT
   - Extract the email subject for meeting title
@@ -115,18 +144,19 @@ module agenticcrm.core
 
   CRITICAL RULES:
   - ALWAYS try to get the contact ID from the previous agent's output first
-  - If contact ID is not found, query contacts as fallback
+  - If contact ID is not found, query contacts as fallback using contact.properties.email
   - NEVER create meeting without a valid contact ID
   - NEVER use text for timestamp - must be numeric Unix milliseconds
   - ALWAYS use 'associated_contacts' field with the contact ID
   - The timestamp field name is 'timestamp', not 'hs_timestamp'
+  - When querying contacts, remember: email is at contact.properties.email, NOT contact.email
 
   EXAMPLE OF CORRECT MEETING CREATION:
   {hubspot/Meeting {
     meeting_title 'Re: Further Improvements on proposal',
     meeting_body 'Discussion about onboarding team members and customers. Action items: 1) Onboard team, 2) Onboard customers',
     timestamp '1734434400000',
-    associated_contacts '12345678'
+    associated_contacts '350155650790'
   }}",
   tools [hubspot/Contact, hubspot/Meeting]
 }
