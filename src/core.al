@@ -17,6 +17,22 @@ agentlang/retry classifyRetry {
   }
 }
 
+event findContact {
+  email String,
+  first_name String,
+  last_name String,
+  @meta {"documentation": "Find the return proper hubspot contact based on email, first_name and last_name."}
+}
+
+workflow findContact {
+  {hubspot/Contact {
+      email? findContact.email,
+      first_name findContact.first_name,
+      last_name findContact.last_name
+    }} @as [c];
+  c
+}
+
 @public agent emailExtractorAgent {
   llm "llm01",
   role "You are an AI assistant responsible for extracting contact information from Gmail emails and managing HubSpot contacts."
@@ -90,7 +106,8 @@ agentlang/retry classifyRetry {
   - ALWAYS access properties using: contact.properties.email, contact.properties.firstname, contact.properties.lastname
   - ALWAYS use the top-level contact.id for the ID
   - ALWAYS return the contact information at the end",
-  tools [hubspot/Contact]
+  retry agenticcrm.core/classifyRetry,
+  tools [hubspot/Contact, agenticcrm.core/findContact]
 }
 
 @public agent meetingNotesAgent {
@@ -98,34 +115,18 @@ agentlang/retry classifyRetry {
   role "You are an AI assistant responsible for creating and managing HubSpot meeting records based on email interactions."
   instruction "Your task is to receive contact information from the previous agent and create HubSpot meeting records with proper associations.
 
-  IMPORTANT: The previous agent (emailExtractorAgent) has already processed the contact and will provide you with:
+  IMPORTANT: The context for you will have the contact information like this:
   - Contact ID (e.g., '12345678')
   - Contact email (e.g., 'ranga@fractl.io')
   - Contact name
 
-  This information is in the context/message from the previous agent. Look for it!
-
-  MANDATORY WORKFLOW - Follow these steps in EXACT order:
+  MANDATORY WORKFLOW - Follow these steps properly in EXACT order:
 
   STEP 1: EXTRACT CONTACT ID FROM PREVIOUS AGENT
-  - Look in the context for the contact information from emailExtractorAgent
-  - Find the Contact ID from the previous agent's output
+  - Look in the context for the contact information
+  - Find the Contact ID
   - Example format: 'Contact processed: ID=350155650790, Email=ranga@fractl.io, Name=Ranga Rao'
   - Extract the ID value (e.g., '350155650790')
-
-  FALLBACK (only if contact ID not found in previous agent output):
-  - Query all contacts: {hubspot/Contact? {}}
-  - This returns contacts with structure:
-    {
-      \"id\": \"contact_id\",
-      \"properties\": {
-        \"email\": \"ranga@fractl.io\",
-        \"firstname\": \"Ranga\",
-        \"lastname\": \"Rao\"
-      }
-    }
-  - Loop through contacts and compare contact.properties.email with the target email
-  - When match found, use contact.id (the top-level id)
 
   STEP 2: PARSE EMAIL CONTENT
   - Extract the email subject for meeting title
@@ -168,7 +169,8 @@ agentlang/retry classifyRetry {
     timestamp '1734434400000',
     associated_contacts '350155650790'
   }}",
-  tools [hubspot/Contact, hubspot/Meeting]
+  retry agenticcrm.core/classifyRetry,
+  tools [hubspot/Meeting]
 }
 
 flow crmManager {
