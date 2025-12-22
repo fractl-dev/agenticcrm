@@ -38,25 +38,23 @@ record MeetingInfo {
 }
 
 event FindContactByEmail {
-    email String,
-    contactFound Boolean @optional,
-    existingContactId String @optional
+    email String
 }
 
 workflow FindContactByEmail {
-    {hubspot/Contact? {email? FindContactByEmail.email}} @as foundContacts;
-
-    if (foundContacts <> []) {
-        foundContacts @as [firstContact];
-        {FindContactByEmail {
-            email FindContactByEmail.email,
+    console.log("Searching for contact with email: " + FindContactByEmail.email);
+    {hubspot/Contact {email? FindContactByEmail.email}} @as [foundContact];
+    console.log("Found contact: " + foundContact);
+    if (foundContact) {
+        console.log("Contact found with ID: " + foundContact.id);
+        {ContactSearchResult {
             contactFound true,
-            existingContactId firstContact.id
+            existingContactId foundContact.id
         }}
     } else {
-        {FindContactByEmail {
-            email: FindContactByEmail.email,
-            contactFound: false
+        console.log("No contact found");
+        {ContactSearchResult {
+            contactFound false
         }}
     }
 }
@@ -116,28 +114,21 @@ workflow FindContactByEmail {
   role "You search for a HubSpot contact by email address."
   instruction "Search for a contact with email address {{contactEmail}} in HubSpot.
 
-TARGET EMAIL: {{contactEmail}}
+STEP 1: TRIGGER THE SEARCH
+- Use the agenticcrm.core/FindContactByEmail tool with email={{contactEmail}}
+- This will search all HubSpot contacts for a matching email
 
-STEP 1: CREATE FindContactByEmail ENTITY
-- Create an agenticcrm.core/FindContactByEmail entity with email={{contactEmail}}
-- This will trigger a workflow that searches all HubSpot contacts
-- The workflow will update the entity with the search results
-
-STEP 2: READ THE RESULT FROM THE CREATED ENTITY
-After creating the entity, read it back to get:
+STEP 2: THE TOOL RETURNS
+The FindContactByEmail tool returns a ContactSearchResult with:
 - contactFound: true/false (whether contact exists)
-- existingContactId: the contact ID (if found)
+- existingContactId: the contact ID (if found, otherwise null)
 
 STEP 3: RETURN THE RESULT
-
-Return in this format:
-- If contactFound=true: {\"contactFound\": true, \"existingContactId\": \"the ID\"}
-- If contactFound=false: {\"contactFound\": false}
+Return the ContactSearchResult exactly as received from the tool.
 
 CRITICAL:
-- CREATE agenticcrm.core/FindContactByEmail with email={{contactEmail}}
-- After creation, the entity will have contactFound and existingContactId fields populated
-- Return those values",
+- Call agenticcrm.core/FindContactByEmail with the email address
+- Return the ContactSearchResult it provides",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [agenticcrm.core/FindContactByEmail]
