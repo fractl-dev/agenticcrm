@@ -44,20 +44,18 @@ event FindContactByEmail {
 }
 
 workflow FindContactByEmail {
-    FindContactByEmail.email @as targetEmail;
-
-    {hubspot/Contact? {email? targetEmail}} @as foundContacts;
+    {hubspot/Contact? {email? FindContactByEmail.email}} @as foundContacts;
 
     if (foundContacts <> []) {
         foundContacts @as [firstContact];
         {FindContactByEmail {
-            email: targetEmail,
-            contactFound: true,
-            existingContactId: firstContact.id
+            email FindContactByEmail.email,
+            contactFound true,
+            existingContactId firstContact.id
         }}
     } else {
         {FindContactByEmail {
-            email: targetEmail,
+            email: FindContactByEmail.email,
             contactFound: false
         }}
     }
