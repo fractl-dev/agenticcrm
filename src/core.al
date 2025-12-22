@@ -92,28 +92,32 @@ record MeetingInfo {
   role "You query all HubSpot contacts and search for a specific email address."
   instruction "Query all HubSpot contacts and find if any contact has email {{contactEmail}}.
 
-WHAT YOU MUST DO:
-1. Call the hubspot/Contact tool to query ALL existing contacts
-2. Examine EVERY contact in the results
-3. For each contact, check if contact.properties.email matches {{contactEmail}}
-4. If you find a match, return contactFound=true and existingContactId=the contact's id
-5. If no match after checking all contacts, return contactFound=false
+HOW TO QUERY CONTACTS:
+- Use the hubspot/Contact tool to query with NO parameters (empty query)
+- This will return ALL contacts
+- Do NOT pass any filter parameters like url, email, or other fields
+- Just query everything and then search through the results
 
-DATA STRUCTURE:
-- Contacts have: id (string, top level) and properties (object with email, firstname, lastname)
-- Email is at: contact.properties.email
-- ID is at: contact.id
+WHAT TO DO:
+1. Query ALL contacts using hubspot/Contact tool (no filters)
+2. Loop through each contact in the results
+3. For each contact, check: contact.email == {{contactEmail}} (case-insensitive)
+4. If match found: return contactFound=true, existingContactId=contact.id
+5. If no match found: return contactFound=false
 
-EXAMPLE:
-- If you query and get a contact with id=\"123456\" and properties.email=\"ranga@fractl.io\"
-- And {{contactEmail}} is \"ranga@fractl.io\"
-- Then return: contactFound=true, existingContactId=\"123456\"
+VALID CONTACT FIELDS:
+- id (string)
+- email (string)
+- first_name (string)
+- last_name (string)
+- properties (object)
 
-REQUIREMENTS:
-- MUST query the hubspot/Contact tool
-- MUST check ALL contacts returned
-- Compare emails case-insensitively
-- Return actual ID values from the query results",
+IMPORTANT:
+- Do NOT use 'url' field (it doesn't exist)
+- Do NOT pass query parameters
+- Just query all and loop through results
+- Access email at: contact.email OR contact.properties.email (try both)
+- Access ID at: contact.id",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
@@ -140,6 +144,8 @@ decision contactExistsCheck {
 
   WHAT TO DO:
   - You can optionally update the contact with new information using the hubspot/Contact tool
+  - If updating, use ONLY these valid fields: first_name, last_name
+  - Do NOT use: url, website, or any other invalid fields
   - Then return the contact ID
 
   RETURN VALUE:
@@ -163,9 +169,15 @@ decision contactExistsCheck {
 
   WHAT TO DO:
   - Use the hubspot/Contact tool to create a new contact
-  - Create the contact with email, first_name, and last_name
+  - Use ONLY these valid fields: email, first_name, last_name
   - Extract the id from the created contact object
   - Return that id as finalContactId
+
+  VALID FIELDS FOR CREATION:
+  - email (required)
+  - first_name (optional)
+  - last_name (optional)
+  - Do NOT use: url, website, or any other fields
 
   RETURN VALUE:
   - Set finalContactId to the actual ID of the created contact
