@@ -86,7 +86,16 @@ From chosen text:
 - firstName = first word before <
 - lastName = second word before <
 
-Use ONLY exact text from message. Do not generate or assume anything.",
+Example:
+
+Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: John Doe <john@doe.io>, email subject is: Discussion on things, and the email body is: Something happened.
+
+From the above you need to pick like:
+contactEmail = john@doe.io
+firstName = John
+lastName = Doe
+
+Use ONLY exact text from message. Do not generate or assume anything. There might be different email domain, but, use whatever is provided.",
   responseSchema agenticcrm.core/ContactInfo,
   retry agenticcrm.core/classifyRetry
 }
