@@ -38,8 +38,13 @@ record MeetingInfo {
     meetingBody String
 }
 
-record OwnerLookupResult {
-    ownerId String @optional
+record OwnerSearchResult {
+  ownerFound Boolean,
+  existingOwnerId String @optional
+}
+
+record OwnerResult {
+    ownerId String
 }
 
 event FindContactByEmail {
@@ -64,6 +69,30 @@ workflow FindContactByEmail {
             contactFound false
         }}
     }
+}
+
+event FindOwnerByEmail {
+  email String
+}
+
+workflow FindOwnerByEmail {
+  console.log("Searching for owner with email: " + FindOwnerByEmail.email);
+  {hubspot/Owner {email? FindOwnerByEmail.email}} @as foundOwners;
+  console.log("Found owners: " + foundOwners.length);
+
+  if (foundOwners.length > 0) {
+    foundOwners @as [firstOwner];
+    console.log("Owner found - ID: " + firstOwner.id);
+    {OwnerSearchResult {
+        ownerFound true,
+        existingOwnerId firstOwner.id
+      }}
+  } else {
+    console.log("No owner found for: " + FindOwnerByEmail.email);
+    {OwnerSearchResult {
+        ownerFound false
+      }}
+  }
 }
 
 @public agent parseEmailInfo {
@@ -271,35 +300,27 @@ CRITICAL:
 
 @public agent findMeetingOwner {
   llm "llm01",
-  role "You look up HubSpot owner by email address."
-  instruction "Find the HubSpot owner/user ID for the admin email.
+  role "You search for the HubSpot owner by email address."
+  instruction "Search for the owner with email address {{adminEmail}} in Hubspot.
 
-ADMIN EMAIL: {{adminEmail}}
+STEP 1: TRIGGER THE SEARCH
+- Use the agenticcrm.core/FindOwnerByEmail tool with email={{adminEmail}}
+- This will search all HubSpot owners for a matching email
 
-STEP 1: QUERY HUBSPOT OWNER BY EMAIL
-- Use hubspot/Owner tool to query by email
-- Query: {hubspot/Owner {email? \"{{adminEmail}}\"}}
-- This will return the owner record if found
-
-STEP 2: EXTRACT OWNER ID
-- From the owner record, get the 'id' field
-- This is the owner ID (also called user_id in HubSpot)
+STEP 2: THE TOOL RETURNS
+The FindOwnerByEmail tool returns a OwnerSearchResult with:
+- ownerFound: true/false (whether owner exists)
+- existingOwnerId: the owner ID (if found, otherwise null)
 
 STEP 3: RETURN THE RESULT
-- If owner found: Return ownerId with the ID value
-- If not found: Return ownerId as null (meeting will be created without owner)
-
-EXAMPLE:
-If adminEmail=\"pratik@fractl.io\" and HubSpot returns Owner with id=\"12345\":
-Return: {\"ownerId\": \"12345\"}
+Return the OwnerSearchResult exactly as received from the tool.
 
 CRITICAL:
-- Query by the actual email address from {{adminEmail}}
-- Return the owner ID, not the email
-- If no owner found, return null",
-  responseSchema agenticcrm.core/OwnerLookupResult,
+- Call agenticcrm.core/FindOwnerByEmail with the email address
+- Return the OwnerSearchResult it provides",
+  responseSchema agenticcrm.core/OwnerSearchResult,
   retry agenticcrm.core/classifyRetry,
-  tools [hubspot/Owner]
+  tools [agenticcrm.core/FindOwnerByEmail]
 }
 
 @public agent createMeeting {
@@ -311,7 +332,7 @@ YOU HAVE THESE VALUES AVAILABLE:
 - Contact ID: {{finalContactId}} (this is the actual contact ID to associate)
 - Meeting Title: {{meetingTitle}} (this is the actual title from the email)
 - Meeting Body: {{meetingBody}} (this is the actual summary of the email)
-- Owner ID: {{ownerId}} (this is the HubSpot owner/user ID for the meeting host)
+- Owner ID: {{existingOwnerId}} (this is the actual HubSpot owner/user ID for the meeting host)
 
 STEP 1: GENERATE CURRENT TIMESTAMP
 - Get current date/time
