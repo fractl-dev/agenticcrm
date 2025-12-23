@@ -46,7 +46,7 @@ record MeetingInfo {
 }
 
 record OwnerResult {
-    ownerId String
+    ownerId String @optional
 }
 
 event FindContactByEmail {
@@ -75,20 +75,34 @@ workflow FindContactByEmail {
 
 @public agent parseEmailInfo {
   llm "llm01",
-  role "You extract contact information from email messages."
-  instruction "Extract the external contact's email and name from the message.
+  role "You literally extract text from the message without making any assumptions."
+  instruction "Read the EXACT text from the message and extract email and name - do NOT generate or assume anything.
 
-The message contains:
-- 'Email sender is: Name <email>'
-- 'email recipient is: Name <email>'
+STEP 1: Find the sender text
+Look for 'Email sender is:' and read everything after it until you hit a comma.
+Example message: 'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: ...'
+Sender text = 'Pratik Karki <pratik@fractl.io>'
 
-RULES:
-1. If sender contains 'pratik@fractl.io', extract from RECIPIENT
-2. Otherwise, extract from SENDER
-3. Extract email from inside angle brackets <>
-4. Extract name from before angle brackets and split into firstName, lastName
+STEP 2: Find the recipient text
+Look for 'email recipient is:' and read everything after it until you hit a comma.
+Example message: '..., email recipient is: John Smith <john@example.com>, email subject is: ...'
+Recipient text = 'John Smith <john@example.com>'
 
-Return the contactEmail, firstName, and lastName in the ContactInfo schema.",
+STEP 3: Choose which text to use
+IF the sender text contains the string 'pratik@fractl.io' THEN use recipient text
+ELSE use sender text
+
+STEP 4: Extract from the chosen text
+contactEmail = the text between < and > characters
+firstName = the first word before the < character
+lastName = the second word before the < character
+
+ABSOLUTELY CRITICAL RULES:
+- Extract ONLY from the actual message text provided
+- DO NOT generate email addresses like 'user@domain.com' or 'name@example.com'
+- DO NOT assume or make up any information
+- LITERALLY copy the text from inside the angle brackets
+- If you cannot find the exact pattern, extraction failed",
   responseSchema agenticcrm.core/ContactInfo,
   retry agenticcrm.core/classifyRetry
 }
@@ -140,15 +154,19 @@ Return JSON: {\"finalContactId\": \"<the ID from created contact>\"}",
 
 @public agent findOwner {
   llm "llm01",
-  role "You search for a HubSpot owner by email address."
-  instruction "Search for the owner with email 'pratik@fractl.io' in HubSpot.
+  role "You search for the HubSpot owner by querying for pratik@fractl.io."
+  instruction "Find the owner with email pratik@fractl.io.
 
-Query using hubspot/Owner with: {hubspot/Owner {email? \"pratik@fractl.io\"}}
+Execute: {hubspot/Owner {email? \"pratik@fractl.io\"}}
 
-This returns a list of owners. Extract the id from the first owner in the results.
-Return JSON: {\"ownerId\": \"<the owner id>\"}
+If the query returns results:
+- Extract the id field from the first owner
+- Return {\"ownerId\": \"<that id value>\"}
 
-If no owner is found, return {\"ownerId\": null}",
+If the query returns no results or fails:
+- Return {\"ownerId\": null}
+
+CRITICAL: Return null if owner not found, don't fail the entire flow.",
   responseSchema agenticcrm.core/OwnerResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Owner]
@@ -180,7 +198,7 @@ Available values from scratchpad:
 - {{finalContactId}} = the contact ID to associate
 - {{meetingTitle}} = the meeting title
 - {{meetingBody}} = the meeting body/summary
-- {{ownerId}} = the owner ID for the meeting
+- {{ownerId}} = the owner ID (may be null)
 
 Steps:
 1. Get the current timestamp in Unix milliseconds
@@ -191,12 +209,13 @@ Steps:
    - meeting_outcome: \"COMPLETED\"
    - meeting_start_time: the current timestamp you generated
    - meeting_end_time: the current timestamp + 3600000
-   - owner: use the actual value from {{ownerId}} (REQUIRED for HubSpot UI visibility)
+   - owner: use the actual value from {{ownerId}} ONLY if it is not null
    - associated_contacts: use the actual value from {{finalContactId}}
 
 CRITICAL:
-- Use the ACTUAL values from the scratchpad variables, not the variable names themselves.
-- The owner field is REQUIRED for meetings to show in HubSpot UI.",
+- Use the ACTUAL values from the scratchpad variables, not the variable names themselves
+- If {{ownerId}} is null, DO NOT include the owner field at all
+- The meeting will still be created without owner, it just won't show in some UI views",
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Meeting]
 }
