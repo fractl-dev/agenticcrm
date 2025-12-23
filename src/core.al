@@ -91,14 +91,14 @@ firstName = first word before <
 lastName = second word before <
 
 Example input:
-'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: John Doe <john@company.com>, email subject is: ...'
+'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: John Doe <john@doe.io>, email subject is: ...'
 
 Expected output:
-contactEmail = john@company.com
+contactEmail = john@doe.io
 firstName = John
 lastName = Doe
 
-CRITICAL: Use ONLY the exact text from the message. Do not generate fake emails or names.",
+CRITICAL: Use ONLY the exact text from the message. Do not generate fake emails/domains or names.",
   responseSchema agenticcrm.core/ContactInfo,
   retry agenticcrm.core/classifyRetry
 }
