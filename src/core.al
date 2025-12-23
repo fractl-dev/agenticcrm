@@ -43,20 +43,14 @@ event FindContactByEmail {
 
 workflow FindContactByEmail {
     console.log("Searching for contact with email: " + FindContactByEmail.email);
-    {hubspot/Contact {email? FindContactByEmail.email}} @as [foundContact];
-    console.log("Found contact: " + foundContact);
-    if (foundContact) {
-        console.log("Contact found with ID: " + foundContact.id);
-        {ContactSearchResult {
-            contactFound true,
-            existingContactId foundContact.id
-        }}
-    } else {
-        console.log("No contact found");
-        {ContactSearchResult {
-            contactFound false
-        }}
-    }
+    {hubspot/Contact {email? FindContactByEmail.email}} @as contact;
+    console.log("Contact result: " + contact);
+    console.log("Contact.id: " + contact.id);
+    console.log("Contact.__id__: " + contact.__id__);
+    {ContactSearchResult {
+        contactFound true,
+        existingContactId contact.id
+    }}
 }
 
 @public agent parseEmailInfo {
