@@ -37,6 +37,10 @@ record MeetingInfo {
     meetingBody String
 }
 
+record OwnerResult {
+    ownerId String
+}
+
 event FindContactByEmail {
     email String
 }
@@ -63,50 +67,20 @@ workflow FindContactByEmail {
 
 @public agent parseEmailInfo {
   llm "llm01",
-  role "You extract email addresses and names from email messages."
-  instruction "Your ONLY task is to parse the email message and extract contact information.
+  role "You extract contact information from email messages."
+  instruction "Extract the external contact's email and name from the message.
 
-  MESSAGE FORMAT:
-  The message will look like this:
-  'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: Ranga Rao <ranga@fractl.io>, email subject is: ...'
+The message contains:
+- 'Email sender is: Name <email>'
+- 'email recipient is: Name <email>'
 
-  STEP 1: IDENTIFY WHO IS THE EXTERNAL CONTACT
-  - Look for 'Email sender is:' to find the sender
-  - Look for 'email recipient is:' to find the recipient
-  - If the sender contains 'pratik@fractl.io', the external contact is the RECIPIENT
-  - If the sender does NOT contain 'pratik@fractl.io', the external contact is the SENDER
-  - Never extract pratik@fractl.io as the contact
+RULES:
+1. If sender contains 'pratik@fractl.io', extract from RECIPIENT
+2. Otherwise, extract from SENDER
+3. Extract email from inside angle brackets <>
+4. Extract name from before angle brackets and split into firstName, lastName
 
-  STEP 2: EXTRACT EMAIL ADDRESS FROM THE EXTERNAL CONTACT
-  - From the external contact field (sender or recipient), extract ONLY the email inside angle brackets <>
-  - Example: 'Ranga Rao <ranga@fractl.io>' → extract 'ranga@fractl.io'
-  - Example: 'John Doe <john@example.com>' → extract 'john@example.com'
-
-  STEP 3: EXTRACT NAME FROM THE EXTERNAL CONTACT
-  - From the external contact field, extract the name BEFORE the angle brackets
-  - Example: 'Ranga Rao <ranga@fractl.io>' → extract 'Ranga Rao'
-  - Split the name into firstName and lastName
-  - Example: 'Ranga Rao' → firstName='Ranga', lastName='Rao'
-  - Example: 'John Doe' → firstName='John', lastName='Doe'
-
-  STEP 4: RETURN THE EXTRACTED INFORMATION
-  - Return contactEmail (the email address from step 2)
-  - Return firstName (first name from step 3)
-  - Return lastName (last name from step 3)
-  - Save these info to ContactInfo record as responseSchema
-
-  EXAMPLE:
-  Input: 'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: Ranga Rao <ranga@fractl.io>...'
-  - Sender contains pratik@fractl.io → External contact is RECIPIENT
-  - Extract from recipient: 'Ranga Rao <ranga@fractl.io>'
-  - contactEmail = 'ranga@fractl.io'
-  - firstName = 'Ranga'
-  - lastName = 'Rao'
-
-  CRITICAL RULES:
-  - Extract ONLY - do NOT query or create anything
-  - NEVER extract pratik@fractl.io as a contact
-  - Always extract from the correct field (sender OR recipient, not both)",
+Return the contactEmail, firstName, and lastName in the ContactInfo schema.",
   responseSchema agenticcrm.core/ContactInfo,
   retry agenticcrm.core/classifyRetry
 }
@@ -114,23 +88,9 @@ workflow FindContactByEmail {
 @public agent findExistingContact {
   llm "llm01",
   role "You search for a HubSpot contact by email address."
-  instruction "Search for a contact with email address {{contactEmail}} in HubSpot.
+  instruction "Search for a contact using the email {{contactEmail}}.
 
-STEP 1: TRIGGER THE SEARCH
-- Use the agenticcrm.core/FindContactByEmail tool with email={{contactEmail}}
-- This will search all HubSpot contacts for a matching email
-
-STEP 2: THE TOOL RETURNS
-The FindContactByEmail tool returns a ContactSearchResult with:
-- contactFound: true/false (whether contact exists)
-- existingContactId: the contact ID (if found, otherwise null)
-
-STEP 3: RETURN THE RESULT
-Return the ContactSearchResult exactly as received from the tool.
-
-CRITICAL:
-- Call agenticcrm.core/FindContactByEmail with the email address
-- Return the ContactSearchResult it provides",
+Use the agenticcrm.core/FindContactByEmail tool and return the ContactSearchResult it provides.",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry agenticcrm.core/classifyRetry,
   tools [agenticcrm.core/FindContactByEmail]
@@ -147,28 +107,12 @@ decision contactExistsCheck {
 
 @public agent updateExistingContact {
   llm "llm01",
-  role "You update existing HubSpot contacts and return the contact ID."
-  instruction "Update the existing contact if needed, then return its ID.
+  role "You return the existing contact ID."
+  instruction "Return the existing contact ID.
 
-CONTACT INFORMATION:
-- Existing Contact ID: {{existingContactId}}
-- First Name: {{firstName}}
-- Last Name: {{lastName}}
+Return JSON: {\"finalContactId\": \"{{existingContactId}}\"}
 
-STEP 1: Optionally update (if needed)
-- You can use the hubspot/Contact tool to update
-- If updating, use only: first_name, last_name
-- Do NOT use: url, website, or other invalid fields
-
-STEP 2: Return in THIS EXACT FORMAT
-{
-  \"finalContactId\": \"{{existingContactId}}\"
-}
-
-CRITICAL:
-- You MUST return JSON with finalContactId
-- The value should be {{existingContactId}} (the ID passed to you)
-- This is the actual ID string like \"350155650790\"",
+Use the actual ID value from {{existingContactId}}, not the placeholder text.",
   responseSchema agenticcrm.core/ContactResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
@@ -176,127 +120,75 @@ CRITICAL:
 
 @public agent createNewContact {
   llm "llm01",
-  role "You create new HubSpot contacts and return the contact ID."
-  instruction "Create a new contact in HubSpot and return its ID.
+  role "You create new HubSpot contacts."
+  instruction "Create a contact with email={{contactEmail}}, first_name={{firstName}}, last_name={{lastName}}.
 
-CONTACT TO CREATE:
-- Email: {{contactEmail}}
-- First Name: {{firstName}}
-- Last Name: {{lastName}}
-
-STEP 1: Create the contact
-- Use the hubspot/Contact tool
-- Create with these fields only: email, first_name, last_name
-- Do NOT use: url, website, or other fields
-
-STEP 2: Extract the ID
-- Get the id from the created contact
-- The id will be a string like \"350155650790\"
-
-STEP 3: Return in THIS EXACT FORMAT
-{
-  \"finalContactId\": \"the actual ID like 350155650790\"
-}
-
-CRITICAL:
-- You MUST return JSON with finalContactId
-- The value must be the actual ID from the created contact
-- Do NOT return code or syntax",
+Use hubspot/Contact tool with only these three fields.
+Return JSON: {\"finalContactId\": \"<the ID from created contact>\"}",
   responseSchema agenticcrm.core/ContactResult,
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Contact]
 }
 
+@public agent findOwner {
+  llm "llm01",
+  role "You search for a HubSpot owner by email address."
+  instruction "Search for the owner with email 'pratik@fractl.io' in HubSpot.
+
+Query using hubspot/Owner with: {hubspot/Owner {email? \"pratik@fractl.io\"}}
+
+This returns a list of owners. Extract the id from the first owner in the results.
+Return JSON: {\"ownerId\": \"<the owner id>\"}
+
+If no owner is found, return {\"ownerId\": null}",
+  responseSchema agenticcrm.core/OwnerResult,
+  retry agenticcrm.core/classifyRetry,
+  tools [hubspot/Owner]
+}
+
 @public agent parseEmailContent {
   llm "llm01",
-  role "You parse email content to extract meeting information."
-  instruction "Your ONLY task is to analyze the email and prepare meeting information.
+  role "You extract meeting information from email content."
+  instruction "Extract meeting information from the message.
 
-  MESSAGE FORMAT:
-  The message will look like this:
-  'Email sender is: ..., email recipient is: ..., email subject is: Sixth meeting notes, and the email body is: Hi Ranga,...'
+The message format is:
+'..., email subject is: <SUBJECT>, and the email body is: <BODY>'
 
-  STEP 1: EXTRACT EMAIL SUBJECT
-  - Find the text that comes AFTER 'email subject is:' and BEFORE ', and the email body is:'
-  - This entire text is the meeting title
-  - Example: 'email subject is: Sixth meeting notes of the evening, and the email body is:...'
-    → meetingTitle = 'Sixth meeting notes of the evening'
+Extract:
+1. meetingTitle: The text between 'email subject is:' and ', and the email body is:'
+2. meetingBody: Summarize the text after 'and the email body is:' focusing on key discussion points and action items
 
-  STEP 2: EXTRACT EMAIL BODY
-  - Find the text that comes AFTER 'and the email body is:'
-  - This is the full email body text
-  - Example: 'and the email body is: Hi Ranga,... Best, Pratik'
-    → This entire text is the email body
-
-  STEP 3: ANALYZE THE EMAIL BODY AND CREATE SUMMARY
-  - Read the extracted email body from step 2
-  - Identify:
-    * Meeting discussions
-    * Key decisions
-    * Action items mentioned
-    * Important points
-  - Create a concise summary focusing on these elements
-
-  STEP 4: RETURN MEETING INFORMATION
-  - Return meetingTitle: the exact subject text from step 1
-  - Return meetingBody: the summary you created in step 3
-
-  EXAMPLE:
-  Input: 'Email sender is: Pratik Karki <pratik@fractl.io>, email recipient is: Ranga Rao <ranga@fractl.io>, email subject is: Project Discussion, and the email body is: Hi Ranga, We discussed the project timeline. Action items: 1. Complete design by Friday. Best, Pratik'
-
-  Output:
-  - meetingTitle = 'Project Discussion'
-  - meetingBody = 'Discussed project timeline. Action items: Complete design by Friday.'
-
-  CRITICAL RULES:
-  - Extract subject from the text AFTER 'email subject is:' and BEFORE ', and the email body is:'
-  - Extract body from the text AFTER 'and the email body is:'
-  - Parse ONLY - do NOT create meetings or contacts",
+Return meetingTitle and meetingBody in the MeetingInfo schema.",
   responseSchema agenticcrm.core/MeetingInfo,
   retry agenticcrm.core/classifyRetry
 }
 
 @public agent createMeeting {
   llm "llm01",
-  role "You create HubSpot meetings and associate them with contacts."
-  instruction "Create a meeting in HubSpot with the information provided.
+  role "You create HubSpot meetings with proper timestamps and associations."
+  instruction "Create a meeting in HubSpot using the provided information.
 
-YOU HAVE THESE VALUES AVAILABLE:
-- Contact ID: {{finalContactId}} (this is the actual contact ID to associate)
-- Meeting Title: {{meetingTitle}} (this is the actual title from the email)
-- Meeting Body: {{meetingBody}} (this is the actual summary of the email)
+Available values from scratchpad:
+- {{finalContactId}} = the contact ID to associate
+- {{meetingTitle}} = the meeting title
+- {{meetingBody}} = the meeting body/summary
+- {{ownerId}} = the owner ID for the meeting
 
-STEP 1: GENERATE CURRENT TIMESTAMP
-- Get current date/time
-- Convert to Unix milliseconds (numeric, like 1734434400000)
-
-STEP 2: CREATE THE MEETING
-Use the hubspot/Meeting tool with these REQUIRED fields:
-- meeting_title: the ACTUAL title value (NOT the word 'meetingTitle')
-- meeting_body: the ACTUAL summary text (NOT the word 'meetingBody')
-- timestamp: the numeric timestamp you generated
-- meeting_outcome: \"COMPLETED\" (this is REQUIRED for meetings to show in HubSpot UI)
-- meeting_start_time: the same numeric timestamp you generated
-- meeting_end_time: the timestamp + 3600000 (1 hour later)
-- associated_contacts: the ACTUAL contact ID (NOT the word 'finalContactId')
-
-EXAMPLE OF WHAT TO CREATE DON'T USE THIS EXACT FORMAT:
-If meetingTitle=\"Fifth meeting notes\" and meetingBody=\"Discussion about onboarding\" and finalContactId=\"350155650790\":
-{hubspot/Meeting {
-  meeting_title \"Fifth meeting notes\",
-  meeting_body \"Discussion about onboarding team members and customers to the platform.\",
-  timestamp \"1734434400000\",
-  meeting_outcome \"COMPLETED\",
-  meeting_start_time \"1734434400000\",
-  meeting_end_time \"1734438000000\",
-  associated_contacts \"350155650790\"
-}}
+Steps:
+1. Get the current timestamp in Unix milliseconds
+2. Create the meeting using hubspot/Meeting with:
+   - meeting_title: use the actual value from {{meetingTitle}}
+   - meeting_body: use the actual value from {{meetingBody}}
+   - timestamp: the current timestamp you generated
+   - meeting_outcome: \"COMPLETED\"
+   - meeting_start_time: the current timestamp you generated
+   - meeting_end_time: the current timestamp + 3600000
+   - owner: use the actual value from {{ownerId}} (REQUIRED for HubSpot UI visibility)
+   - associated_contacts: use the actual value from {{finalContactId}}
 
 CRITICAL:
-- Use the ACTUAL VALUES from the scratchpad, not the placeholder names
-- Do NOT write {{meetingTitle}} - write the actual title
-- Do NOT write {{meetingBody}} - write the actual body text
-- Do NOT write {{finalContactId}} - write the actual ID",
+- Use the ACTUAL values from the scratchpad variables, not the variable names themselves.
+- The owner field is REQUIRED for meetings to show in HubSpot UI.",
   retry agenticcrm.core/classifyRetry,
   tools [hubspot/Meeting]
 }
@@ -309,7 +201,8 @@ flow contactFlow {
 }
 
 flow meetingFlow {
-  parseEmailContent --> createMeeting
+  parseEmailContent --> findOwner
+  findOwner --> createMeeting
 }
 
 flow crmManager {
