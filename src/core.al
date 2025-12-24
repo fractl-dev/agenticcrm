@@ -218,20 +218,20 @@ Return exactly what the tool returned.",
 @public agent parseEmailContent {
   llm "llm01",
   role "Extract meeting information from the email."
-  instruction "Parse the message to extract meeting information.
+  instruction "Extract meeting information from YOUR MESSAGE.
 
-Your message contains text in the format:
-Email sender is: ..., email recipient is: ..., email subject is: TITLE_HERE, and the email body is: BODY_HERE
+YOUR MESSAGE contains:
+Email sender is: (name and email), email recipient is: (name and email), email subject is: (subject text), and the email body is: (body text)
 
-Task 1: Find the email subject
-Look for the text after 'email subject is: ' and before ', and the email body is:'
-Copy it exactly as meetingTitle
+Step 1: Extract the email subject
+Find the text between 'email subject is: ' and ', and the email body is:'
+This exact text becomes meetingTitle
 
-Task 2: Summarize the email body
-Look for the text after 'and the email body is: '
-Read all of it and create a brief summary as meetingBody
+Step 2: Extract and summarize the email body
+Find the text after 'and the email body is: '
+Read it and create a brief summary as meetingBody
 
-Return meetingTitle and meetingBody.",
+Return meetingTitle and meetingBody from YOUR MESSAGE.",
   responseSchema agenticcrm.core/MeetingInfo,
   retry agenticcrm.core/classifyRetry
 }
