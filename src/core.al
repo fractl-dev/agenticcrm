@@ -73,6 +73,29 @@ workflow FindContactByEmail {
     }
 }
 
+event FindOwnerByEmail {
+    email String
+}
+
+workflow FindOwnerByEmail {
+    console.log("=== FindOwnerByEmail: Searching for: " + FindOwnerByEmail.email);
+    {hubspot/Owner {email? FindOwnerByEmail.email}} @as foundOwners;
+    console.log("=== FindOwnerByEmail: Found " + foundOwners.length + " owners");
+
+    if (foundOwners.length > 0) {
+        foundOwners @as [firstOwner];
+        console.log("=== FindOwnerByEmail: Owner exists - ID: " + firstOwner.id);
+        {OwnerResult {
+            ownerId firstOwner.id
+        }}
+    } else {
+        console.log("=== FindOwnerByEmail: No owner found, returning null");
+        {OwnerResult {
+            ownerId null
+        }}
+    }
+}
+
 @public agent parseEmailInfo {
   llm "llm01",
   role "Extract contact information from the email message."
@@ -189,25 +212,17 @@ CRITICAL GUARDRAILS:
 @public agent findOwner {
   llm "llm01",
   role "Find the HubSpot owner for pratik@fractl.io."
-  instruction "Use the hubspot/Owner tool to search for owner with email pratik@fractl.io.
+  instruction "Search for the owner with email pratik@fractl.io.
 
-If the tool returns one or more owners:
-- Take the first owner from the results
-- Extract its id field
-- Return {\"ownerId\": \"<that id value>\"}
+Call agenticcrm.core/FindOwnerByEmail with email=\"pratik@fractl.io\"
 
-If the tool returns no owners or fails:
-- Return {\"ownerId\": null}
+The tool returns an OwnerResult with:
+- ownerId: the owner ID if found, or null if not found
 
-EXAMPLE:
-If tool returns owner with id \"89234567\":
-Return: {\"ownerId\": \"89234567\"}
-
-If tool returns empty results:
-Return: {\"ownerId\": null}",
+Return the OwnerResult exactly as received from the tool.",
   responseSchema agenticcrm.core/OwnerResult,
   retry agenticcrm.core/classifyRetry,
-  tools [hubspot/Owner]
+  tools [agenticcrm.core/FindOwnerByEmail]
 }
 
 @public agent parseEmailContent {
