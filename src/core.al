@@ -332,32 +332,19 @@ CRITICAL GUARDRAILS:
   tools [hubspot/Meeting]
 }
 
-flow contactFlow {
+flow crmManager {
   parseEmailInfo --> findExistingContact
   findExistingContact --> contactExistsCheck
   contactExistsCheck --> "ContactExists" updateExistingContact
   contactExistsCheck --> "ContactNotFound" createNewContact
-}
-
-flow meetingFlow {
+  updateExistingContact --> parseEmailContent
+  createNewContact --> parseEmailContent
   parseEmailContent --> findOwner
   findOwner --> createMeeting
 }
 
-flow crmManager {
-  contactFlow --> meetingFlow
-}
-
-@public agent contactFlow {
-  role "You manage the contact identification and creation workflow."
-}
-
-@public agent meetingFlow {
-  role "You manage the meeting creation and association workflow."
-}
-
 @public agent crmManager {
-  role "You coordinate the contact and meeting creation workflow using deterministic decision-based routing."
+  role "You coordinate the complete CRM workflow: extract contact information, find or create the contact in HubSpot, then extract meeting information and create the meeting with proper associations."
 }
 
 workflow @after create:gmail/Email {
