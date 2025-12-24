@@ -205,9 +205,11 @@ CRITICAL GUARDRAILS:
 @public agent findOwner {
   llm "llm01",
   role "Find the HubSpot owner."
-  instruction "Call agenticcrm.core/FindOwnerByEmail with email=pratik@fractl.io
+  instruction "Step 1: Call the tool agenticcrm.core/FindOwnerByEmail
+Pass: email = pratik@fractl.io
 
-Return the OwnerResult that the tool provides.",
+Step 2: The tool returns an OwnerResult with an ownerId field
+Return exactly what the tool returned.",
   responseSchema agenticcrm.core/OwnerResult,
   retry agenticcrm.core/classifyRetry,
   tools [agenticcrm.core/FindOwnerByEmail]
