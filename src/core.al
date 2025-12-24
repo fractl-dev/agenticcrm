@@ -2,16 +2,9 @@ module agenticcrm.core
 
 {agentlang.ai/LLM {
     name "llm01",
-    service "anthropic",
+    service "openai",
     config {
-        "model": "claude-sonnet-4-5",
-        "maxTokens": 21333,
-        "enableThinking": false,
-        "temperature": 0.7,
-        "budgetTokens": 8192,
-        "enablePromptCaching": true,
-        "stream": false,
-        "enableExtendedOutput": true
+        "model": "gpt-5.2",
     }
 }, @upsert}
 
