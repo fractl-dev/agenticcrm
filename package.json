@@ -3,7 +3,10 @@
     "version": "0.0.1",
     "dependencies": {
         "gmail-studio": "git+https://github.com/agentlang-hub/gmail-studio.git#main",
-        "hubspot-studio": "git+https://github.com/agentlang-hub/hubspot-studio.git#main"
+        "hubspot-studio": "git+https://github.com/agentlang-hub/hubspot-studio.git#main",
+        "agentlang": "*"
     },
-    "type": "module"
+    "devDependencies": {
+      "@agentlang/lstudio": "*"
+    }
 }
