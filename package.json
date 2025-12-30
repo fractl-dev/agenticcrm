@@ -2,8 +2,8 @@
     "name": "agenticcrm",
     "version": "0.0.1",
     "dependencies": {
-        "gmail-studio": "git+https://github.com/agentlang-hub/gmail-studio.git#main",
-        "hubspot-studio": "git+https://github.com/agentlang-hub/hubspot-studio.git#main",
+        "gmail-studio": "git+https://github.com/agentlang-hub/gmail.git#main",
+        "hubspot-studio": "git+https://github.com/agentlang-hub/hubspot.git#main",
         "agentlang": "*"
     },
     "devDependencies": {
