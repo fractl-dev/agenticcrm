@@ -1,0 +1,5 @@
+{
+  "content": "{\"schemaVersion\":\"1.0.0\",\"module\":{\"name\":\"al_scratch\",\"generatedAt\":\"2025-06-14T10:30:00.000Z\",\"lastUpdatedAt\":\"2025-06-14T10:30:00.000Z\"},\"originalRequirements\":{\"dataModelRequest\":\"Analyze existing module\",\"workflowRequest\":\"Analyze existing module\",\"agentRequest\":\"Analyze existing module\"},\"entities\":{},\"events\":{},\"workflows\":{},\"agents\":{},\"flows\":{},\"designPatterns\":[],\"updateHistory\":[],\"copilotContext\":{\"lastAnalyzedCode\":\"2025-06-14T10:30:00.000Z\",\"codeComplexity\":\"simple\",\"mainUseCases\":[],\"commonQueries\":[]}}",
+  "originalRequirements": {},
+  "updateHistory": []
+}
