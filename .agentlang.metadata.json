@@ -1,5 +1,293 @@
 {
-  "content": "{\"schemaVersion\":\"1.0.0\",\"module\":{\"name\":\"al_scratch\",\"generatedAt\":\"2025-06-14T10:30:00.000Z\",\"lastUpdatedAt\":\"2025-06-14T10:30:00.000Z\"},\"originalRequirements\":{\"dataModelRequest\":\"Analyze existing module\",\"workflowRequest\":\"Analyze existing module\",\"agentRequest\":\"Analyze existing module\"},\"entities\":{},\"events\":{},\"workflows\":{},\"agents\":{},\"flows\":{},\"designPatterns\":[],\"updateHistory\":[],\"copilotContext\":{\"lastAnalyzedCode\":\"2025-06-14T10:30:00.000Z\",\"codeComplexity\":\"simple\",\"mainUseCases\":[],\"commonQueries\":[]}}",
+  "schemaVersion": "1.0.0",
+  "module": {
+    "name": "agenticcrm.core",
+    "generatedAt": "2025-01-20T10:30:00.000Z",
+    "lastUpdatedAt": "2026-01-02T14:45:37.191Z"
+  },
   "originalRequirements": {},
-  "updateHistory": []
+  "entities": {
+    "ContactInfo": {
+      "purpose": "Captures parsed contact and meeting details extracted from incoming emails for CRM processing",
+      "attributes": {
+        "contactEmail": {
+          "type": "String",
+          "description": "Email address extracted from email sender or recipients",
+          "constraints": []
+        },
+        "firstName": {
+          "type": "String",
+          "description": "First name of the contact person",
+          "constraints": []
+        },
+        "lastName": {
+          "type": "String",
+          "description": "Last name of the contact person",
+          "constraints": []
+        },
+        "meetingTitle": {
+          "type": "String",
+          "description": "Subject line from the email to use as meeting title",
+          "constraints": []
+        },
+        "meetingBody": {
+          "type": "String",
+          "description": "Summarized content from the email body for meeting notes",
+          "constraints": []
+        },
+        "meetingDate": {
+          "type": "String",
+          "description": "ISO 8601 timestamp from the email date field",
+          "constraints": []
+        }
+      },
+      "relationships": {},
+      "businessRules": [
+        "Email address must be extracted exactly as it appears between angle brackets",
+        "Meeting date must be in ISO 8601 format for timestamp conversion",
+        "If sender is pratik@fractl.io, extract contact from recipients instead"
+      ]
+    },
+    "ContactSearchResult": {
+      "purpose": "Returns the result of searching for an existing contact in HubSpot by email",
+      "attributes": {
+        "contactFound": {
+          "type": "Boolean",
+          "description": "Indicates whether a matching contact exists in HubSpot",
+          "constraints": []
+        },
+        "existingContactId": {
+          "type": "String",
+          "description": "HubSpot contact ID if found, null otherwise",
+          "constraints": [
+            "@optional"
+          ]
+        }
+      },
+      "relationships": {},
+      "businessRules": [
+        "contactFound must be true if existingContactId is present",
+        "existingContactId is only populated when contact exists in HubSpot"
+      ]
+    },
+    "ContactResult": {
+      "purpose": "Holds the final contact ID after either finding existing or creating new contact",
+      "attributes": {
+        "finalContactId": {
+          "type": "String",
+          "description": "HubSpot contact ID to use for meeting association",
+          "constraints": []
+        }
+      },
+      "relationships": {},
+      "businessRules": [
+        "finalContactId must be a valid HubSpot contact ID",
+        "This ID is used to associate the meeting with the correct contact"
+      ]
+    },
+    "OwnerResult": {
+      "purpose": "Contains the HubSpot owner ID found by email lookup or null if not found",
+      "attributes": {
+        "ownerId": {
+          "type": "String",
+          "description": "HubSpot owner ID or null if no matching owner exists",
+          "constraints": [
+            "@optional"
+          ]
+        }
+      },
+      "relationships": {},
+      "businessRules": [
+        "If ownerId is null, fallback owner ID 85257652 is used for meeting creation",
+        "Owner email pratik@fractl.io is used for the lookup"
+      ]
+    }
+  },
+  "events": {
+    "FindContactByEmail": {
+      "purpose": "Triggers a search for existing HubSpot contacts matching the provided email address",
+      "parameters": {
+        "email": "String"
+      },
+      "public": false,
+      "usedBy": [
+        "FindContactByEmail",
+        "findExistingContact"
+      ]
+    },
+    "FindOwnerByEmail": {
+      "purpose": "Triggers a search for HubSpot owners matching the provided email address",
+      "parameters": {
+        "email": "String"
+      },
+      "public": false,
+      "usedBy": [
+        "FindOwnerByEmail",
+        "findOwner"
+      ]
+    }
+  },
+  "workflows": {
+    "FindContactByEmail": {
+      "purpose": "Searches HubSpot for contacts by email and returns whether contact exists with its ID",
+      "businessLogic": "Queries hubspot/Contact by email filter, returns contactFound=true with ID if found, otherwise returns contactFound=false",
+      "entitiesInvolved": [
+        "ContactSearchResult"
+      ],
+      "pattern": "search-and-return",
+      "steps": [
+        "Log search attempt with email",
+        "Query hubspot/Contact with email filter",
+        "Log number of contacts found",
+        "If contacts found, extract first contact ID and return ContactSearchResult with contactFound=true",
+        "If no contacts found, return ContactSearchResult with contactFound=false"
+      ],
+      "triggerEvent": "FindContactByEmail"
+    },
+    "FindOwnerByEmail": {
+      "purpose": "Searches HubSpot for owners by email and returns the owner ID if found",
+      "businessLogic": "Queries hubspot/Owner by email filter, returns ownerId if found, otherwise returns null",
+      "entitiesInvolved": [
+        "OwnerResult"
+      ],
+      "pattern": "search-and-return",
+      "steps": [
+        "Log search attempt with email",
+        "Query hubspot/Owner with email filter",
+        "Log number of owners found",
+        "If owners found, extract first owner ID and return OwnerResult with ownerId",
+        "If no owners found, return OwnerResult with ownerId=null"
+      ],
+      "triggerEvent": "FindOwnerByEmail"
+    },
+    "AfterCreateGmailEmail": {
+      "purpose": "Automatically processes incoming Gmail emails to extract contact info and create CRM records",
+      "businessLogic": "Triggered after Gmail email creation, logs the email instance and invokes crmManager agent with the email data",
+      "entitiesInvolved": [
+        "ContactInfo",
+        "ContactSearchResult",
+        "ContactResult",
+        "OwnerResult"
+      ],
+      "pattern": "event-trigger-orchestration",
+      "steps": [
+        "Log incoming Gmail email instance",
+        "Invoke crmManager agent with email as message parameter"
+      ],
+      "triggerEvent": "create:gmail/Email"
+    }
+  },
+  "agents": {
+    "parseEmailInfo": {
+      "role": "Extracts structured contact and meeting information from Gmail email instances by parsing sender, recipients, subject, body, and date fields",
+      "type": "executor",
+      "tools": [],
+      "interactionPattern": "Receives Gmail email JSON and applies extraction rules to identify contact details and meeting metadata",
+      "businessValue": "Automates the tedious task of manually extracting contact and meeting information from emails, ensuring consistent data capture for CRM",
+      "isPublic": true
+    },
+    "findExistingContact": {
+      "role": "Searches HubSpot to determine if a contact already exists for the given email address",
+      "type": "executor",
+      "tools": [
+        "agenticcrm.core/FindContactByEmail"
+      ],
+      "interactionPattern": "Receives contact email and calls search workflow to check HubSpot for existing records",
+      "businessValue": "Prevents duplicate contact creation by identifying existing contacts before attempting to create new ones",
+      "isPublic": true
+    },
+    "updateExistingContact": {
+      "role": "Returns the existing contact ID when a contact is found in HubSpot",
+      "type": "executor",
+      "tools": [
+        "hubspot/Contact"
+      ],
+      "interactionPattern": "Receives existing contact ID and formats it as ContactResult for downstream processing",
+      "businessValue": "Ensures meeting associations use the correct existing contact record rather than creating duplicates",
+      "isPublic": true
+    },
+    "createNewContact": {
+      "role": "Creates a new contact in HubSpot when no existing contact is found for the email address",
+      "type": "executor",
+      "tools": [
+        "hubspot/Contact"
+      ],
+      "interactionPattern": "Receives contact details and creates HubSpot contact with exact email, first name, and last name",
+      "businessValue": "Automatically adds new contacts to HubSpot CRM when they first interact via email",
+      "isPublic": true
+    },
+    "findOwner": {
+      "role": "Looks up the HubSpot owner by email to associate with the meeting record",
+      "type": "executor",
+      "tools": [
+        "agenticcrm.core/FindOwnerByEmail"
+      ],
+      "interactionPattern": "Calls owner search workflow with hardcoded email pratik@fractl.io",
+      "businessValue": "Ensures meetings are assigned to the correct HubSpot owner for proper tracking and accountability",
+      "isPublic": true
+    },
+    "createMeeting": {
+      "role": "Creates a completed meeting record in HubSpot with proper contact and owner associations",
+      "type": "executor",
+      "tools": [
+        "hubspot/Meeting"
+      ],
+      "interactionPattern": "Receives contact ID, meeting details, date, and owner ID, converts ISO date to Unix timestamp, and creates HubSpot meeting with all required fields",
+      "businessValue": "Automatically logs email conversations as completed meetings in HubSpot for comprehensive activity tracking",
+      "isPublic": true
+    },
+    "crmManager": {
+      "role": "Coordinates the complete CRM workflow: extract contact and meeting information from the email, find or create the contact in HubSpot, find the owner, and create the meeting with proper associations",
+      "type": "planner",
+      "tools": [],
+      "interactionPattern": "Orchestrates the entire email-to-CRM pipeline through the crmManager flow",
+      "businessValue": "Provides end-to-end automation of email processing into CRM records, eliminating manual data entry and ensuring consistent record creation",
+      "isPublic": true
+    }
+  },
+  "flows": {
+    "crmManager": {
+      "purpose": "Orchestrates the complete email-to-CRM pipeline from parsing to meeting creation",
+      "nodes": [
+        "parseEmailInfo",
+        "findExistingContact",
+        "contactExistsCheck",
+        "updateExistingContact",
+        "createNewContact",
+        "findOwner",
+        "createMeeting"
+      ],
+      "publicAgent": "crmManager",
+      "useCase": "When an email arrives in Gmail, automatically extract contact details, find or create the contact in HubSpot, associate the correct owner, and log the email as a completed meeting"
+    }
+  },
+  "designPatterns": [
+    "All record entities use flat structure without @id constraints, serving as data transfer objects",
+    "Search workflows follow query → conditional return pattern with logging at each step",
+    "Contact resolution uses decision node (contactExistsCheck) to branch between update and create paths",
+    "Agent instructions include detailed step-by-step procedures with examples for clarity",
+    "All agents use classifyRetry for error handling consistency",
+    "Fallback values are embedded in agent instructions (e.g., owner ID 85257652)",
+    "Date conversion from ISO 8601 to Unix milliseconds is handled in createMeeting agent",
+    "Workflow trigger uses @after create:gmail/Email for automatic email processing",
+    "Tools are referenced with fully-qualified names (module/Entity or module/Event)",
+    "Console logging is used throughout workflows for debugging and audit trail"
+  ],
+  "updateHistory": [],
+  "copilotContext": {
+    "lastAnalyzedCode": "2025-01-20T10:30:00.000Z",
+    "codeComplexity": "medium",
+    "mainUseCases": [
+      "Automatically process incoming Gmail emails into HubSpot CRM records",
+      "Extract contact and meeting information from email content",
+      "Find or create contacts in HubSpot to avoid duplicates",
+      "Create completed meeting records with proper associations"
+    ],
+    "commonQueries": [
+      "Search HubSpot contacts by email address",
+      "Search HubSpot owners by email address",
+      "Create contact with email, first name, and last name",
+      "Create meeting with title, body, timestamp, outcome, owner, and associated contacts"
+    ]
+  }
 }
