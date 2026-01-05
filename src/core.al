@@ -292,56 +292,9 @@ CRITICAL GUARDRAILS:
   tools [hubspot/Contact]
 }
 
-@public agent findOwner {
-  llm "llm01",
-  role "Find the HubSpot owner."
-  instruction "You have available from the scratchpad: {{ownerEmail}}
-
-STEP 1: Extract the owner email
-Read {{ownerEmail}} from the scratchpad.
-This is the email address of the meeting owner (e.g., 'sales@yourcompany.com').
-
-STEP 2: Call the FindOwnerByEmail tool
-Use the tool agenticcrm.core/FindOwnerByEmail
-Pass the parameter: email = {{ownerEmail}}
-Use the EXACT email value - do not modify it.
-
-STEP 3: Extract the ownerId from the result
-The tool will return an OwnerResult object.
-If it contains an ownerId field, extract that value.
-If the ownerId is null, it means no owner was found in HubSpot.
-
-STEP 4: Return the result in JSON format
-Return exactly this structure:
-{
-  \"ownerId\": \"<the extracted ownerId value>\"
-}
-
-If no owner was found (ownerId is null), return:
-{
-  \"ownerId\": null
-}
-
-EXAMPLE 1 (Owner found):
-If {{ownerEmail}} = 'sales@yourcompany.com'
-You call: agenticcrm.core/FindOwnerByEmail with email='sales@yourcompany.com'
-Tool returns: OwnerResult with ownerId='987654321'
-You return: {\"ownerId\": \"987654321\"}
-
-EXAMPLE 2 (Owner not found):
-If {{ownerEmail}} = 'unknown@company.com'
-You call: agenticcrm.core/FindOwnerByEmail with email='unknown@company.com'
-Tool returns: OwnerResult with ownerId=null
-You return: {\"ownerId\": null}
-
-CRITICAL RULES:
-- Use the EXACT email from {{ownerEmail}} for the search
-- Do not hardcode any email address
-- Extract the ownerId value correctly from the tool response
-- Return null if no owner was found",
-  responseSchema agenticcrm.core/OwnerResult,
-  retry classifyRetry,
-  tools [agenticcrm.core/FindOwnerByEmail]
+workflow findOwner {
+  console.log("=== findOwner: Looking up owner with email from ownerEmail variable");
+  {agenticcrm.core/FindOwnerByEmail {email ownerEmail}}
 }
 
 @public agent createMeeting {
