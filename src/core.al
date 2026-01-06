@@ -23,25 +23,35 @@ record OwnerResult {
     ownerId String @optional
 }
 
+record EmailFilterResult {
+    shouldProcess Boolean,
+    reason String
+}
+
+record SkipResult {
+    skipped Boolean,
+    reason String
+}
+
+record OwnerCheckResult {
+    isOwner Boolean,
+    ownerDetails String @optional
+}
+
 event FindContactByEmail {
     email String
 }
 
 workflow FindContactByEmail {
-    console.log("=== FindContactByEmail: Searching for contact with email: " + FindContactByEmail.email);
     {hubspot/Contact {email? FindContactByEmail.email}} @as foundContacts;
-    console.log("=== FindContactByEmail: Query returned " + foundContacts.length + " contact(s)");
 
     if (foundContacts.length > 0) {
         foundContacts @as [firstContact];
-        console.log("=== FindContactByEmail: Contact found - ID: " + firstContact.id + ", Email: " + firstContact.email);
         {ContactSearchResult {
             contactFound true,
             existingContactId firstContact.id
         }}
     } else {
-        console.log("=== FindContactByEmail: No contact found for email: " + FindContactByEmail.email);
-        console.log("=== FindContactByEmail: Will create new contact");
         {ContactSearchResult {
             contactFound false
         }}
@@ -53,23 +63,61 @@ event FindOwnerByEmail {
 }
 
 workflow FindOwnerByEmail {
-    console.log("=== FindOwnerByEmail: Searching for owner with email: " + FindOwnerByEmail.email);
     {hubspot/Owner {email? FindOwnerByEmail.email}} @as foundOwners;
-    console.log("=== FindOwnerByEmail: Query returned " + foundOwners.length + " owner(s)");
 
     if (foundOwners.length > 0) {
         foundOwners @as [firstOwner];
-        console.log("=== FindOwnerByEmail: Owner found - ID: " + firstOwner.id + ", Email: " + firstOwner.email);
         {OwnerResult {
             ownerId firstOwner.id
         }}
     } else {
-        console.log("=== FindOwnerByEmail: WARNING - No owner found for email: " + FindOwnerByEmail.email);
-        console.log("=== FindOwnerByEmail: Please verify this email exists as an owner in HubSpot");
+        console.log("WARNING: No owner found for email: " + FindOwnerByEmail.email);
         {OwnerResult {
             ownerId null
         }}
     }
+}
+
+@public agent filterEmail {
+  llm "llm01",
+  role "Determine if an email should be processed for CRM."
+  instruction "You have access to {{message}} which contains a gmail/Email instance.
+
+Analyze the email and determine if it should be processed for CRM (creating contacts and meetings).
+
+PROCESS THE EMAIL (return shouldProcess=true) if:
+- It's a business communication with a client, prospect, or partner
+- It's a meeting discussion or project update with external parties
+- It contains actionable business information worth tracking
+
+DO NOT PROCESS (return shouldProcess=false) if:
+- It's an automated notification (e.g., 'no-reply@', 'noreply@', 'automated@')
+- It's a newsletter or marketing email
+- It's a system-generated message
+- It's spam or promotional content
+- It's an internal team discussion (both sender and recipient are from the same domain)
+- The subject contains: 'unsubscribe', 'newsletter', 'notification', 'alert', 'digest'
+
+Analyze the sender, subject, and body to make your decision.
+
+Return JSON:
+{
+  \"shouldProcess\": true or false,
+  \"reason\": \"Brief explanation of why it should or should not be processed\"
+}",
+  responseSchema agenticcrm.core/EmailFilterResult,
+  retry classifyRetry
+}
+
+@public agent checkIfOwner {
+  llm "llm01",
+  role "Check if contact email belongs to an owner."
+  instruction "Query hubspot/Owner with email={{contactEmail}}.
+If owner found, return {\"isOwner\": true, \"ownerDetails\": \"Owner: <name>\"}.
+If no owner found, return {\"isOwner\": false}.",
+  responseSchema agenticcrm.core/OwnerCheckResult,
+  retry classifyRetry,
+  tools [hubspot/Owner]
 }
 
 @public agent parseEmailInfo {
@@ -104,9 +152,15 @@ From the chosen text (sender or recipients):
 STEP 4: Extract meeting title
 meetingTitle = copy the EXACT value from the subject field in {{message}}
 
-STEP 5: Summarize meeting body
-Read the body field from {{message}} and write a brief summary.
-meetingBody = your summary of the body content
+STEP 5: Extract action items and key discussion points
+Read the body field from {{message}} and identify:
+- Action items mentioned (tasks, to-dos, requests)
+- Key decisions or discussion points
+- Important deadlines or next steps
+- Questions that need answers
+
+Create a concise summary focusing on these actionable elements.
+meetingBody = summary of action items and key discussion points from the email
 
 STEP 6: Extract meeting date
 meetingDate = copy the EXACT value from the date field in {{message}}
@@ -132,7 +186,7 @@ If {{message}} contains:
     \"sender\": \"Sales Rep <sales@yourcompany.com>\",
     \"recipients\": \"John Smith <john@clientcompany.com>\",
     \"subject\": \"Q1 Planning Discussion\",
-    \"body\": \"Let's review the quarterly goals and action items.\",
+    \"body\": \"Hi John, let's schedule time to review Q1 goals. Please send me your team's priorities by Friday. We also need to finalize the budget allocation.\",
     \"date\": \"2025-12-31T10:30:00.000Z\"
   }
 }
@@ -143,7 +197,7 @@ You would extract:
   \"firstName\": \"John\",
   \"lastName\": \"Smith\",
   \"meetingTitle\": \"Q1 Planning Discussion\",
-  \"meetingBody\": \"Review of quarterly goals and action items\",
+  \"meetingBody\": \"Action items: John to send team priorities by Friday. Need to finalize budget allocation. Schedule meeting to review Q1 goals.\",
   \"meetingDate\": \"2025-12-31T10:30:00.000Z\",
   \"ownerEmail\": \"sales@yourcompany.com\"
 }
@@ -155,7 +209,7 @@ If {{message}} contains:
     \"sender\": \"Jane Doe <jane@externalcorp.io>\",
     \"recipients\": \"Account Manager <am@yourcompany.com>\",
     \"subject\": \"Partnership Proposal\",
-    \"body\": \"I'd like to discuss a potential partnership opportunity.\",
+    \"body\": \"Hi, I'd like to discuss a potential partnership. Can we set up a call next week? I'll prepare a deck outlining our proposal and revenue share model.\",
     \"date\": \"2025-12-31T14:00:00.000Z\"
   }
 }
@@ -166,7 +220,7 @@ You would extract:
   \"firstName\": \"Jane\",
   \"lastName\": \"Doe\",
   \"meetingTitle\": \"Partnership Proposal\",
-  \"meetingBody\": \"Discussion about potential partnership opportunity\",
+  \"meetingBody\": \"Action items: Schedule call for next week. Jane to prepare proposal deck covering revenue share model. Discuss partnership opportunity.\",
   \"meetingDate\": \"2025-12-31T14:00:00.000Z\",
   \"ownerEmail\": \"am@yourcompany.com\"
 }",
@@ -292,9 +346,57 @@ CRITICAL GUARDRAILS:
   tools [hubspot/Contact]
 }
 
+decision emailShouldBeProcessed {
+  case (shouldProcess == true) {
+    ProcessEmail
+  }
+  case (shouldProcess == false) {
+    SkipEmail
+  }
+}
+
+decision contactIsOwner {
+  case (isOwner == true) {
+    SkipContactCreation
+  }
+  case (isOwner == false) {
+    ProceedWithContact
+  }
+}
+
 workflow findOwner {
-  console.log("=== findOwner: Looking up owner with email from ownerEmail variable");
   {agenticcrm.core/FindOwnerByEmail {email ownerEmail}}
+}
+
+@public agent skipProcessing {
+  llm "llm01",
+  role "Return skip status when email is not processed."
+  instruction "The email was filtered out and will not be processed.
+Use the reason from {{reason}}.
+
+Return JSON:
+{
+  \"skipped\": true,
+  \"reason\": <use the exact value from {{reason}}>
+}",
+  responseSchema agenticcrm.core/SkipResult,
+  retry classifyRetry
+}
+
+@public agent skipOwnerContact {
+  llm "llm01",
+  role "Skip contact creation for owners and proceed to meeting."
+  instruction "The contact email belongs to an owner, so we skip contact creation.
+Return the owner details to use directly.
+
+Return JSON with just a note that contact creation was skipped:
+{
+  \"finalContactId\": null
+}
+
+Note: This will proceed to meeting creation without a contact association.",
+  responseSchema agenticcrm.core/ContactResult,
+  retry classifyRetry
 }
 
 @public agent createMeeting {
@@ -316,8 +418,8 @@ If it's null or empty, pass null to the owner field.
 
 STEP 2: Extract contact ID
 Read {{finalContactId}} from the scratchpad.
-This is the contact ID to associate with the meeting.
-Use this EXACT value for associated_contacts.
+If finalContactId is null (contact was an owner), do NOT include associated_contacts field.
+If finalContactId has a value, use this EXACT value for associated_contacts.
 
 STEP 3: Convert email date to Unix timestamp
 Take the ISO 8601 date from {{meetingDate}} (e.g., '2025-12-31T05:02:35.000Z')
@@ -364,17 +466,25 @@ CRITICAL GUARDRAILS:
 - Use EXACT values from scratchpad variables - do not modify
 - All timestamps must be Unix milliseconds as strings
 - If ownerId is null, pass null to the owner field (do NOT use a hardcoded fallback)
-- The associated_contacts field MUST be the exact contact ID from {{finalContactId}}
+- If finalContactId is null, omit the associated_contacts field entirely
+- If finalContactId has a value, the associated_contacts field MUST be the exact contact ID
 - All field values must be strings (except null values)",
   retry classifyRetry,
   tools [hubspot/Meeting]
 }
 
 flow crmManager {
-  parseEmailInfo --> findExistingContact
+  filterEmail --> emailShouldBeProcessed
+  emailShouldBeProcessed --> "SkipEmail" skipProcessing
+  emailShouldBeProcessed --> "ProcessEmail" parseEmailInfo
+  parseEmailInfo --> checkIfOwner
+  checkIfOwner --> contactIsOwner
+  contactIsOwner --> "SkipContactCreation" skipOwnerContact
+  contactIsOwner --> "ProceedWithContact" findExistingContact
   findExistingContact --> contactExistsCheck
   contactExistsCheck --> "ContactExists" updateExistingContact
   contactExistsCheck --> "ContactNotFound" createNewContact
+  skipOwnerContact --> findOwner
   updateExistingContact --> findOwner
   createNewContact --> findOwner
   findOwner --> createMeeting
@@ -385,7 +495,5 @@ flow crmManager {
 }
 
 workflow @after create:gmail/Email {
-    console.log("Following data arrived of instance: ", gmail/Email);
-
     {crmManager {message gmail/Email}}
 }
