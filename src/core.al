@@ -61,6 +61,32 @@ workflow FindContactByEmail {
     }
 }
 
+event createHubspotContact {
+    email String,
+    first_name String @optional,
+    last_name String @optional
+}
+
+workflow createHubspotContact {
+    {hubspot/Contact {
+        email createHubspotContact.email,
+        first_name createHubspotContact.first_name,
+        last_name createHubspotContact.last_name
+    }} @as contacts;
+
+    if (contacts.length > 0) {
+        contacts @as [contact];
+        "The value of contact is: " + contact @as printMessage;
+        console.log(printMessage);
+        contact
+    } else {
+        "The value of contacts is: " + contacts @as printMessage;
+        console.log(printMessage);
+        contacts
+    }
+
+}
+
 @public agent filterEmail {
   llm "sonnet_llm",
   role "Understand email and analyze for CRM processing decisions.",
@@ -178,16 +204,28 @@ CRITICAL OUTPUT FORMAT RULES:
 @public agent findExistingContact {
   llm "gpt_llm",
   role "Search for an existing contact in HubSpot by email address.",
-  instruction "IMPORTANT: Call agenticcrm.core/FindContactByEmail with the exact email from {{ContactInfo.contactEmail}}.
+  instruction "You MUST invoke the agenticcrm.core/FindContactByEmail tool to search for a contact.
 
-Return the result:
+STEP 1: Call agenticcrm.core/FindContactByEmail tool with:
+- email: {{ContactInfo.contactEmail}}
+
+STEP 2: Wait for the tool response. It will return a ContactSearchResult with:
 - contactFound: true or false
 - existingContactId: the contact ID if found
+
+STEP 3: Return the tool's exact response.
+
+CRITICAL RULES:
+- You MUST call the FindContactByEmail tool - do NOT skip this step
+- Use the ACTUAL response from the tool
+- DO NOT make up whether a contact exists
+- DO NOT fabricate contact IDs
 
 CRITICAL OUTPUT FORMAT RULES:
 - NEVER wrap your response in markdown code blocks (``` or ``)
 - NEVER use markdown formatting in your response
 - NEVER add JSON formatting with backticks
+- Output ONLY the raw JSON object directly
 - Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry classifyRetry,
@@ -206,12 +244,18 @@ decision contactExistsCheck {
 @public agent updateExistingContact {
     llm "gpt_llm",
     role "Add existing contact into agenticcrm.core/ContactResult",
-    instruction "IMPORTANT: Extract {{ContactSearchResult.existingContactId}} and return that as finalContactId
+    instruction "Extract {{ContactSearchResult.existingContactId}} and return it as finalContactId.
+
+CRITICAL: 
+- Use the exact ID value from ContactSearchResult.existingContactId
+- This is a numeric string like \"401\" or \"12345\"
+- DO NOT return \"uuid()\" or empty values
 
 CRITICAL OUTPUT FORMAT RULES:
 - NEVER wrap your response in markdown code blocks (``` or ``)
 - NEVER use markdown formatting in your response
 - NEVER add JSON formatting with backticks
+- Output ONLY the raw JSON object directly
 - Do NOT add any markdown syntax, language identifiers, or code fences",
     responseSchema agenticcrm.core/ContactResult,
     retry classifyRetry
@@ -219,31 +263,53 @@ CRITICAL OUTPUT FORMAT RULES:
 
 @public agent createNewContact {
   llm "gpt_llm",
-  role "Create a new contact in HubSpot CRM.",
-  instruction "STEP 1: Verify the email from {{ContactInfo.contactEmail}} is valid and not empty.
+  role "Create a new contact.",
+  instruction "You MUST invoke the agenticcrm.core/createHubspotContact tool by calling it with the contact information.
 
-STEP 2: Create contact using hubspot/Contact with:
-- email: use {{ContactInfo.contactEmail}}
-- first_name: use {{ContactInfo.contactFirstName}}
-- last_name: use {{ContactInfo.contactLastName}}
+STEP 1: Call agenticcrm.core/createHubspotContact tool with ALL three fields (always provide all fields):
+- email: {{ContactInfo.contactEmail}} (required, must not be empty)
+- first_name: {{ContactInfo.contactFirstName}} (if empty, provide as empty string \"\")
+- last_name: {{ContactInfo.contactLastName}} (if empty, provide as empty string \"\")
 
-STEP 3: From the hubspot/Contact tool response, extract the 'id' field.
+IMPORTANT: ALWAYS provide all three fields. If first_name or last_name are empty strings, still include them in the tool call as empty strings \"\". DO NOT omit fields.
 
-STEP 4: Return ONLY the id as finalContactId.
+STEP 2: Wait for the agenticcrm.core/createHubspotContact tool response. The tool will return a contact object.
 
-IMPORTANT: 
-- The contact email must not be empty
-- Extract the exact 'id' value from the created contact response
-- Return it as finalContactId in the ContactResult format
+STEP 3: Look at the response - it will have BOTH an 'id' field AND possibly other fields. The 'id' field is what you need.
+
+STEP 4: Extract the 'id' field value from the ACTUAL tool response. This will be a SHORT NUMERIC STRING (the format looks like \"401\", \"8801\", or \"12345\" but use the ACTUAL value from the response).
+
+STEP 5: Return that ACTUAL numeric ID from the response as finalContactId.
+
+CRITICAL RULES - PAY ATTENTION:
+- You MUST call the createHubspotContact tool - do NOT skip this step
+- You MUST provide ALL fields: email, first_name, AND last_name (even if some are empty strings)
+- DO NOT skip or omit the last_name field even if it's an empty string
+- Extract the 'id' from the ACTUAL tool response - it will be a SHORT NUMERIC STRING
+- The numbers \"401\", \"8801\", \"12345\" mentioned here are ONLY EXAMPLES of the format - DO NOT return these exact numbers
+- You MUST return the ACTUAL ID from the tool response, NOT the example numbers
+- If you see a UUID format (like \"0899649f-3a84-4eef-bee5-c5bc13a9f99a\"), that is WRONG - keep looking for the numeric HubSpot ID
+- DO NOT return a UUID (format: 8-4-4-4-12 hex characters with dashes)
+- DO NOT return \"uuid()\" or any placeholder value
+- DO NOT make up or generate any ID
+- DO NOT use example values - only use the ACTUAL value from the tool response
+- If the tool fails, report the error - do not fabricate an ID
+
+FORMAT EXAMPLES (these show the FORMAT, not values to return):
+✅ CORRECT FORMAT: A short numeric string from the actual response (like \"401\" or \"8801\" but use the ACTUAL number from response)
+❌ WRONG: \"0899649f-3a84-4eef-bee5-c5bc13a9f99a\" (this is a UUID format)
+❌ WRONG: \"uuid()\"
+❌ WRONG: Returning the example number \"401\" when the actual response has a different ID
 
 CRITICAL OUTPUT FORMAT RULES:
 - NEVER wrap your response in markdown code blocks (``` or ``)
 - NEVER use markdown formatting in your response
 - NEVER add JSON formatting with backticks
+- Output ONLY the raw JSON object directly
 - Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/ContactResult,
   retry classifyRetry,
-  tools [hubspot/Contact]
+  tools [agenticcrm.core/createHubspotContact]
 }
 
 workflow skipProcessing {
@@ -297,6 +363,7 @@ flow crmManager {
 }
 
 @public agent crmManager {
+  llm "gpt_llm",
   role "You coordinate the complete CRM workflow: filter the email, extract contact and meeting information, find or create the contact in HubSpot, and create the meeting with proper associations."
 }
 
