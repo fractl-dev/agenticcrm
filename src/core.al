@@ -63,7 +63,7 @@ workflow FindContactByEmail {
 
 @public agent filterEmail {
   llm "sonnet_llm",
-  role "Understand email and analyze for CRM processing decisions."
+  role "Understand email and analyze for CRM processing decisions.",
   instruction "You receive a complete message about an email and also, receive information about gmail email owner and hubspot owner id.
 
 Access the email data from the message that was passed to the flow. The email contains
@@ -120,8 +120,8 @@ decision emailShouldBeProcessed {
 
 @public agent parseEmailInfo {
   llm "sonnet_llm",
-  role "Extract contact information and meeting details from EmailFilterResult."
-    instruction "You have access to understand and parse the data extracted from EmailFilterResult scratchpad.
+  role "Extract contact information and meeting details from EmailFilterResult.",
+  instruction "You have access to understand and parse the data extracted from EmailFilterResult scratchpad.
 
 STEP 1: Extract emails and names from the EmailFilterResult scratchpad:
 - From {{EmailFilterResult.emailSender}}: extract email address and name (if 'Name <email>' format, extract both.)
@@ -151,9 +151,9 @@ Try to figure out contactFirstName and contactLastName if not provided on sender
 }
 
 @public agent findExistingContact {
-  llm "sonnet_llm",
-  role "Search for an existing contact in HubSpot by email address."
-    instruction "IMPORTANT: Call agenticcrm.core/FindContactByEmail with the exact email from {{ContactInfo.contactEmail}}.
+  llm "gpt_llm",
+  role "Search for an existing contact in HubSpot by email address.",
+  instruction "IMPORTANT: Call agenticcrm.core/FindContactByEmail with the exact email from {{ContactInfo.contactEmail}}.
 
 Return the result:
 - contactFound: true or false
@@ -172,15 +172,17 @@ decision contactExistsCheck {
   }
 }
 
-workflow updateExistingContact {
-  {ContactResult {
-    finalContactId ContactSearchResult.existingContactId
-  }}
+@public agent updateExistingContact {
+    llm "gpt_llm",
+    role "Add existing contact into agenticcrm.core/ContactResult",
+    instruction "IMPORTANT: Extract {{ContactSearchResult.existingContactId}} and return that as finalContactId",
+    responseSchema agenticcrm.core/ContactResult,
+    retry classifyRetry
 }
 
 @public agent createNewContact {
-  llm "sonnet_llm",
-  role "Create a new contact in HubSpot CRM."
+  llm "gpt_llm",
+  role "Create a new contact in HubSpot CRM.",
   instruction "Create contact using hubspot/Contact with:
 - email from {{Contactinfo.contactEmail}}
 - first_name from {{Contactinfo.contactFirstName}}
@@ -203,8 +205,8 @@ workflow skipProcessing {
 
 @public agent createMeeting {
   llm "sonnet_llm",
-  role "Create a meeting record in HubSpot to log the email interaction."
-    instruction "Convert {{ContactInfo.meetingDate}} from ISO 8601 to Unix milliseconds.
+  role "Create a meeting record in HubSpot to log the email interaction.",
+  instruction "Convert {{ContactInfo.meetingDate}} from ISO 8601 to Unix milliseconds.
 Calculate end time as start + 3600000 (1 hour).
 
 Create meeting using hubspot/Meeting with:
