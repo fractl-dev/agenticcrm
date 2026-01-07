@@ -61,17 +61,20 @@ workflow FindContactByEmail {
     }
 }
 
+event createHubspotContact {
+    email String,
+    firstName String,
+    lastName String
+}
+
 workflow createHubspotContact {
     {hubspot/Contact {
-        email createHubspotContact.contactEmail,
-        first_name createHubspotContact.contactFirstName,
-        last_name createHubspotContact.contactLastName
-    }} @as contacts;
-    {ContactResult {
-        finalContactId contacts.id
-    }} @as [contactResult];
+        email createHubspotContact.email,
+        first_name createHubspotContact.firstName,
+        last_name createHubspotContact.lastName
+    }} @as contact;
 
-    contacts.id
+    contact
 }
 
 @public agent filterEmail {
@@ -228,6 +231,34 @@ decision contactExistsCheck {
   }
 }
 
+@public agent createNewContact {
+    llm "sonnet_llm",
+    role "Invoke agenticcrm.core/createHubspotContact to create a HubSpot contact",
+    instruction "Invoke the agenticcrm.core/createHubspotContact tool with these exact field names:
+- email: {{ContactInfo.contactEmail}}
+- firstName: {{ContactInfo.contactFirstName}}
+- lastName: {{ContactInfo.contactLastName}}
+
+If firstName or lastName are empty strings, still provide them as empty strings \"\".
+
+After the tool returns, extract the 'id' value from the response and return it as finalContactId.
+
+CRITICAL:
+- Use the ACTUAL id from the tool response (numeric string like \"401\" or \"8801\")
+- DO NOT return UUID format (8-4-4-4-12)
+- DO NOT return \"uuid()\"
+- DO NOT make up an ID
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting
+- NEVER add JSON formatting with backticks
+- Output ONLY the raw JSON object directly",
+    responseSchema agenticcrm.core/ContactResult,
+    retry classifyRetry,
+    tools [agenticcrm.core/createHubspotContact]
+}
+
 @public agent updateExistingContact {
     llm "gpt_llm",
     role "Add existing contact into agenticcrm.core/ContactResult",
@@ -293,7 +324,7 @@ flow crmManager {
   parseEmailInfo --> findExistingContact
   findExistingContact --> contactExistsCheck
   contactExistsCheck --> "ContactExists" updateExistingContact
-  contactExistsCheck --> "ContactNotFound" createHubspotContact
+  contactExistsCheck --> "ContactNotFound" createNewContact
   updateExistingContact --> createMeeting
   createNewContact --> createMeeting
 }
