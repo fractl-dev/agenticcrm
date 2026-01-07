@@ -104,7 +104,13 @@ else, if it shouldn't be processed, then,
  \"shouldProcess\": false
 }
 
-Don't generate markdown format, just invoke the agenticcrm.core/EmailFilterResult and nothing else.",
+Don't generate markdown format, just invoke the agenticcrm.core/EmailFilterResult and nothing else.
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/EmailFilterResult,
   retry classifyRetry
 }
@@ -145,7 +151,13 @@ STEP 4: Return ContactInfo with ACTUAL extracted values:
 IMPORTANT:
 DO NOT return empty strings - extract actual values from the provided data.
 DO NOT create new data, you must absolutely use the data provided.
-Try to figure out contactFirstName and contactLastName if not provided on sender or recipient from the email body which starts from abbreviation like: Hi, <>",
+Try to figure out contactFirstName and contactLastName if not provided on sender or recipient from the email body which starts from abbreviation like: Hi, <>
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/ContactInfo,
   retry classifyRetry
 }
@@ -157,7 +169,13 @@ Try to figure out contactFirstName and contactLastName if not provided on sender
 
 Return the result:
 - contactFound: true or false
-- existingContactId: the contact ID if found",
+- existingContactId: the contact ID if found
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/ContactSearchResult,
   retry classifyRetry,
   tools [agenticcrm.core/FindContactByEmail]
@@ -175,7 +193,13 @@ decision contactExistsCheck {
 @public agent updateExistingContact {
     llm "gpt_llm",
     role "Add existing contact into agenticcrm.core/ContactResult",
-    instruction "IMPORTANT: Extract {{ContactSearchResult.existingContactId}} and return that as finalContactId",
+    instruction "IMPORTANT: Extract {{ContactSearchResult.existingContactId}} and return that as finalContactId
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
     responseSchema agenticcrm.core/ContactResult,
     retry classifyRetry
 }
@@ -190,7 +214,13 @@ decision contactExistsCheck {
 
 IMPORTANT: Invoke the huspot/Contact tool and from it's generated response, only return the id as finalContactId.
 
-Return finalContactId with the id from the created contact.",
+Return finalContactId with the id from the created contact.
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
   responseSchema agenticcrm.core/ContactResult,
   retry classifyRetry,
   tools [hubspot/Contact]
@@ -219,7 +249,13 @@ Create meeting using hubspot/Meeting with:
 - owner from {{EmailFilterResult.hubspotOwnerId}}
 - associated_contacts from {{ContactResult.finalContactId}} (use the contact ID provided)
 
-All timestamps must be Unix milliseconds as strings.",
+All timestamps must be Unix milliseconds as strings.
+
+CRITICAL OUTPUT FORMAT RULES:
+- NEVER wrap your response in markdown code blocks (``` or ``)
+- NEVER use markdown formatting in your response
+- NEVER add JSON formatting with backticks
+- Do NOT add any markdown syntax, language identifiers, or code fences",
   retry classifyRetry,
   tools [hubspot/Meeting]
 }
