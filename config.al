@@ -51,7 +51,7 @@
   "agentlang.ai": [
     {
       "agentlang.ai/LLM": {
-                "name": "llm01",
+                "name": "sonnet_llm",
                 "service": "anthropic",
                 "config": {
                     "model": "claude-sonnet-4-5"

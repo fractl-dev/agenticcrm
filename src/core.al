@@ -56,22 +56,16 @@ workflow FindContactByEmail {
 @public agent filterEmail {
   llm "sonnet_llm",
   role "Extract email information from gmail/Email instance and analyze for CRM processing decisions."
-  instruction "You receive a gmail/Email instance in {{message}}.
+  instruction "You receive a gmail/Email instance from the previous context.
 
-The {{message}} structure is a JSON object with an 'attributes' field containing:
+Access the email data from the message that was passed to the flow. The email structure has an 'attributes' field containing:
 - sender: string like 'Name <email@domain.com>'
 - recipients: string like 'Name <email@domain.com>'
 - subject: the email subject line
 - body: the email body content
 - date: ISO 8601 timestamp
 
-YOUR TASK: Parse {{message}} and analyze these fields:
-- sender: email sender address
-- recipients: email recipient address
-- subject: email subject line
-- body: email content
-
-Now understand the email subject and body along with sender and receipient and determine if this should be processed for CRM.
+YOUR TASK: Analyze the email context and determine if this should be processed for CRM.
 
 It should be processed if:
 - Business discussion with clients/prospects
@@ -100,25 +94,28 @@ decision emailShouldBeProcessed {
 @public agent parseEmailInfo {
   llm "sonnet_llm",
   role "Extract contact information and meeting details from an email."
-  instruction "You receive a gmail/Email instance in {{message}} and the user's gmail email in {{gmailEmail}}.
+    instruction "You have access to the email message from the flow context and you need to figure out who is the contact and owner.
 
-The {{message}} structure is a JSON object with an 'attributes' field containing:
+The email in the context is a gmail/Email instance with an 'attributes' field containing:
 - sender: string like 'Name <email@domain.com>' or just 'email@domain.com'
 - recipients: string like 'Name <email@domain.com>' or just 'email@domain.com'
 - subject: the email subject line
 - body: the email body content
 - date: ISO 8601 timestamp
 
-STEP 1: Extract emails and names from {{message}}.attributes
+STEP 1: Extract emails and names from the email attributes in the context
 - From sender: extract email address and name (if 'Name <email>' format, extract both; if just 'email', extract firstName and lastName from the name)
 - From recipients: same extraction logic
+
+STEP 2: Query the agenticcrm.core/CRMConfig
+- Query agenticcrm.core/CRMConfig, you will receive the information about {{gmailEmail}} and {{ownerId}}.
 
 STEP 2: Determine which participant is the CONTACT (not the user):
 - If sender email matches {{gmailEmail}}, then the recipient is the contact
 - If recipient email matches {{gmailEmail}}, then the sender is the contact
 - Extract contactEmail, contactFirstName, contactLastName from the identified contact
 
-STEP 3: Extract meeting details from {{message}}.attributes
+STEP 3: Extract meeting details from the email attributes
 - meetingTitle: exact value from subject field
 - meetingDate: exact value from date field (keep ISO 8601 format)
 - meetingBody: summarize the body of email in a descriptive clear structure. If there are action items mentioned, create numbered action items.
@@ -127,8 +124,10 @@ STEP 4: Return ContactInfo with ACTUAL extracted values:
 - contactEmail, contactFirstName, contactLastName
 - meetingTitle, meetingBody, meetingDate
 
-DO NOT return empty strings - extract actual values from {{message}}.attributes.",
+DO NOT return empty strings - extract actual values from the email in the context.
+Try to figure out contactFirstName and contactLastName if not provided on sender or recipient from the email body which starts from abbreviation like: Hi, <>",
   responseSchema agenticcrm.core/ContactInfo,
+  tools [agenticrm.core/CRMConfig],
   retry classifyRetry
 }
 
@@ -215,14 +214,20 @@ flow crmManager {
 }
 
 @public agent crmManager {
-  role "You coordinate the complete CRM workflow: filter the email, extract contact and meeting information, find or create the contact in HubSpot, and create the meeting with proper associations."
+  role "You coordinate the complete CRM workflow: filter the email, extract contact and meeting information, find or create the contact in HubSpot, and create the meeting with proper associations.",
+  instruction "You received an email message: {{message}}.
+
+Your task is to execute the crmManager flow with this email:
+
+1. First, initialize the CRM configuration to get gmailEmail and ownerId
+2. Filter the email to determine if it should be processed
+3. If it should be processed, extract contact and meeting information
+4. Find or create the contact in HubSpot
+5. Create a meeting record associated with the contact
+
+Execute the flow and ensure the email message context is available to all subsequent agents in the flow. The message should be accessible throughout the entire workflow execution."
 }
 
 workflow @after create:gmail/Email {
-    {agenticcrm.core/CRMConfig? {}} @as [crmConfig];
-    {crmManager {
-        message gmail/Email,
-        gmailEmail crmConfig.gmailEmail,
-        ownerId crmConfig.ownerId
-    }}
+    {crmManager {message gmail/Email}}
 }
