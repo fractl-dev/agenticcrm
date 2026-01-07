@@ -159,12 +159,12 @@ STEP 4: Return ContactInfo with ACTUAL extracted values from the scratchpad data
 - meetingDate: the ACTUAL {{EmailFilterResult.emailDate}} value (not an example)
 
 CRITICAL RULES - READ CAREFULLY:
-- DO NOT use placeholder values like "sam@something.com" or "Project Discussion"
+- DO NOT use placeholder values like \"sam@something.com\" or \"Project Discussion\"
 - DO NOT use example data - ONLY use the ACTUAL data from EmailFilterResult scratchpad
 - DO NOT return empty strings - extract actual values from the provided data
 - DO NOT create fictional data
-- Extract contactFirstName and contactLastName from the name part of "Name <email>" format
-- If names not in email format, try to find them in the email body (e.g., after "Hi," or in signature)
+- Extract contactFirstName and contactLastName from the name part of \"Name <email>\" format
+- If names not in email format, try to find them in the email body (e.g., after \"Hi,\" or in signature)
 
 CRITICAL OUTPUT FORMAT RULES:
 - NEVER wrap your response in markdown code blocks (``` or ``)
