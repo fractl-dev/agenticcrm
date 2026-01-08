@@ -20,10 +20,6 @@ record ContactSearchResult {
     existingContactId String @optional
 }
 
-record ContactResult {
-    finalContactId String
-}
-
 record EmailFilterResult {
     shouldProcess Boolean,
     gmailOwnerEmail String @optional,
@@ -41,23 +37,26 @@ record SkipResult {
     reason String
 }
 
-event FindContactByEmail {
+event findContactByEmail {
     email String
 }
 
-workflow FindContactByEmail {
-    {hubspot/Contact {email? FindContactByEmail.email}} @as foundContacts;
+workflow findContactByEmail {
+    {hubspot/Contact {email? findContactByEmail.email}} @as foundContacts;
 
     if (foundContacts.length > 0) {
         foundContacts @as [firstContact];
         {ContactSearchResult {
             contactFound true,
             existingContactId firstContact.id
-        }}
+        }} @as csr;
+        console.log(csr);
+        csr
     } else {
         {ContactSearchResult {
             contactFound false
-        }}
+        }} @as csr;
+        csr
     }
 }
 
@@ -74,7 +73,12 @@ workflow createHubspotContact {
         last_name createHubspotContact.lastName
     }} @as contact;
 
-    contact
+    {ContactSearchResult {
+        contactFound true,
+        existingContactId contact.id
+    }} @as contactResult;
+
+    contactResult
 }
 
 @public agent filterEmail {
@@ -191,42 +195,6 @@ CRITICAL OUTPUT FORMAT RULES:
   retry classifyRetry
 }
 
-@public agent findExistingContact {
-  llm "sonnet_llm",
-  role "Search for an existing contact in HubSpot by email address.",
-  instruction "You MUST invoke the agenticcrm.core/FindContactByEmail tool to search for a contact.
-
-STEP 1: Call agenticcrm.core/FindContactByEmail tool with:
-- email: {{ContactInfo.contactEmail}}
-
-STEP 2: Wait for the tool response. It will return a ContactSearchResult with:
-- contactFound: true or false
-- existingContactId: the contact ID if found
-
-STEP 3: Examine the tool's response. If existingContactId is a UUID format (8-4-4-4-12), this is WRONG.
-
-STEP 4: Return the response with the correct ID format.
-
-CRITICAL RULES:
-- You MUST call the FindContactByEmail tool - do NOT skip this step
-- Use the ACTUAL response from the tool
-- The existingContactId should be a SHORT NUMERIC string (like \"401\" or \"8801\"), NOT a UUID
-- If you see a UUID format (like \"c87d3145-bbe1-4241-b51e-3d9ab068dae9\"), report it as an error
-- DO NOT return UUIDs as contact IDs
-- DO NOT make up whether a contact exists
-- DO NOT fabricate contact ID like in the example provided, it must be an actual tool response.
-
-CRITICAL OUTPUT FORMAT RULES:
-- NEVER wrap your response in markdown code blocks (``` or ``)
-- NEVER use markdown formatting in your response
-- NEVER add JSON formatting with backticks
-- Output ONLY the raw JSON object directly
-- Do NOT add any markdown syntax, language identifiers, or code fences",
-  responseSchema agenticcrm.core/ContactSearchResult,
-  retry classifyRetry,
-  tools [agenticcrm.core/FindContactByEmail]
-}
-
 decision contactExistsCheck {
   case (contactFound == true) {
     ContactExists
@@ -234,54 +202,6 @@ decision contactExistsCheck {
   case (contactFound == false) {
     ContactNotFound
   }
-}
-
-@public agent createNewContact {
-    llm "sonnet_llm",
-    role "Invoke agenticcrm.core/createHubspotContact to create a HubSpot contact",
-    instruction "Invoke the agenticcrm.core/createHubspotContact tool with these exact field names:
-- email: {{ContactInfo.contactEmail}}
-- firstName: {{ContactInfo.contactFirstName}}
-- lastName: {{ContactInfo.contactLastName}}
-
-If firstName or lastName are empty strings, still provide them as empty strings \"\".
-
-After the tool returns, extract the 'id' value from the response and return it as finalContactId.
-
-CRITICAL:
-- Use the ACTUAL id from the tool response (numeric string like \"401\" or \"8801\")
-- DO NOT return UUID format (8-4-4-4-12)
-- DO NOT return \"uuid()\"
-- DO NOT make up an ID
-
-CRITICAL OUTPUT FORMAT RULES:
-- NEVER wrap your response in markdown code blocks (``` or ``)
-- NEVER use markdown formatting
-- NEVER add JSON formatting with backticks
-- Output ONLY the raw JSON object directly",
-    responseSchema agenticcrm.core/ContactResult,
-    retry classifyRetry,
-    tools [agenticcrm.core/createHubspotContact]
-}
-
-@public agent updateExistingContact {
-    llm "gpt_llm",
-    role "Add existing contact into agenticcrm.core/ContactResult",
-    instruction "Extract {{ContactSearchResult.existingContactId}} and return it as finalContactId.
-
-CRITICAL: 
-- Use the exact ID value from ContactSearchResult.existingContactId
-- This is a numeric string like \"401\" or \"12345\"
-- DO NOT return \"uuid()\" or empty values
-
-CRITICAL OUTPUT FORMAT RULES:
-- NEVER wrap your response in markdown code blocks (``` or ``)
-- NEVER use markdown formatting in your response
-- NEVER add JSON formatting with backticks
-- Output ONLY the raw JSON object directly
-- Do NOT add any markdown syntax, language identifiers, or code fences",
-    responseSchema agenticcrm.core/ContactResult,
-    retry classifyRetry
 }
 
 workflow skipProcessing {
@@ -305,12 +225,12 @@ STEP 2: Create meeting using hubspot/Meeting with these EXACT fields:
 - meeting_start_time: Unix milliseconds as string
 - meeting_end_time: start + 3600000 as string (must be a string)
 - owner: use {{EmailFilterResult.hubspotOwnerId}} as string
-- associated_contacts: use {{ContactResult.finalContactId}} as string (this associates the meeting with the contact)
+- associated_contacts: use {{ContactSearchResult.existingContactId}} as string (this associates the meeting with the contact)
 
 CRITICAL REQUIREMENTS:
 - All timestamp fields (timestamp, meeting_start_time, meeting_end_time) MUST be Unix milliseconds as strings
 - The owner field must be the HubSpot owner ID as a string
-- The associated_contacts field must contain the contact ID from ContactResult.finalContactId
+- The associated_contacts field must contain the contact ID from {{ContactSearchResult.existingContactId}}
 - Do NOT skip the associated_contacts field - it's required to link the meeting to the contact in HubSpot
 
 CRITICAL OUTPUT FORMAT RULES:
@@ -326,12 +246,11 @@ flow crmManager {
   filterEmail --> emailShouldBeProcessed
   emailShouldBeProcessed --> "SkipEmail" skipProcessing
   emailShouldBeProcessed --> "ProcessEmail" parseEmailInfo
-  parseEmailInfo --> findExistingContact
-  findExistingContact --> contactExistsCheck
-  contactExistsCheck --> "ContactExists" updateExistingContact
-  contactExistsCheck --> "ContactNotFound" createNewContact
-  updateExistingContact --> createMeeting
-  createNewContact --> createMeeting
+  parseEmailInfo --> {findContactByEmail {email ContactInfo.contactEmail}}
+  findContactByEmail --> contactExistsCheck
+  contactExistsCheck --> "ContactExists" createMeeting
+  contactExistsCheck --> "ContactNotFound" {createHubspotContact {email ContactInfo.contactEmail, firstName ContactInfo.contactFirstName, lastName ContactInfo.contactLastName}}
+  createHubspotContact --> createMeeting
 }
 
 @public agent crmManager {
