@@ -81,7 +81,7 @@ workflow createHubspotContact {
     contactResult
 }
 
-@public agent filterEmail {
+agent filterEmail {
   llm "sonnet_llm",
   role "Understand email and analyze for CRM processing decisions.",
   instruction "You receive a complete message about an email and also, receive information about gmail email owner and hubspot owner id.
@@ -144,7 +144,7 @@ decision emailShouldBeProcessed {
   }
 }
 
-@public agent parseEmailInfo {
+agent parseEmailInfo {
   llm "sonnet_llm",
   role "Extract contact information and meeting details from EmailFilterResult.",
   instruction "You have access to understand and parse the data extracted from EmailFilterResult scratchpad.
@@ -211,7 +211,7 @@ workflow skipProcessing {
   }}
 }
 
-@public agent createMeeting {
+agent createMeeting {
   llm "sonnet_llm",
   role "Create a meeting record in HubSpot to log the email interaction.",
   instruction "STEP 1: Convert {{ContactInfo.meetingDate}} from ISO 8601 to Unix milliseconds.
@@ -246,10 +246,10 @@ flow crmManager {
   filterEmail --> emailShouldBeProcessed
   emailShouldBeProcessed --> "SkipEmail" skipProcessing
   emailShouldBeProcessed --> "ProcessEmail" parseEmailInfo
-  parseEmailInfo --> {findContactByEmail {email ContactInfo.contactEmail}}
+  parseEmailInfo --> {findContactByEmail {email parseEmailInfo.contactEmail}}
   findContactByEmail --> contactExistsCheck
   contactExistsCheck --> "ContactExists" createMeeting
-  contactExistsCheck --> "ContactNotFound" {createHubspotContact {email ContactInfo.contactEmail, firstName ContactInfo.contactFirstName, lastName ContactInfo.contactLastName}}
+  contactExistsCheck --> "ContactNotFound" {createHubspotContact {email parseEmailInfo.contactEmail, firstName parseEmailInfo.contactFirstName, lastName parseEmailInfo.contactLastName}}
   createHubspotContact --> createMeeting
 }
 
