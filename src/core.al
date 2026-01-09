@@ -1,12 +1,14 @@
 module agenticcrm.core
 
-entity CRMConfig {
-    id UUID @id @default(uuid()),
+entity CRMConfig
+{
+    id UUID @id  @default(uuid()),
     gmailEmail String,
     ownerId String
 }
 
-record ContactInfo {
+record ContactInfo
+{
     contactEmail String,
     contactFirstName String,
     contactLastName String,
@@ -15,12 +17,14 @@ record ContactInfo {
     meetingDate String
 }
 
-record ContactSearchResult {
+record ContactSearchResult
+{
     contactFound Boolean,
     existingContactId String @optional
 }
 
-record EmailFilterResult {
+record EmailFilterResult
+{
     shouldProcess Boolean,
     gmailOwnerEmail String @optional,
     hubspotOwnerId String @optional,
@@ -32,35 +36,36 @@ record EmailFilterResult {
     emailThreadId String @optional
 }
 
-record SkipResult {
+record SkipResult
+{
     skipped Boolean,
     reason String
 }
 
-event findContactByEmail {
+event findContactByEmail
+{
     email String
 }
 
 workflow findContactByEmail {
-    {hubspot/Contact {email? findContactByEmail.email}} @as foundContacts;
-
-    if (foundContacts.length > 0) {
-        foundContacts @as [firstContact];
-        {ContactSearchResult {
+   {hubspot/Contact {email? findContactByEmail.email}} @as foundContacts;
+   if (foundContacts.length > 0) {
+            foundContacts @as [firstContact];
+    {ContactSearchResult {
             contactFound true,
             existingContactId firstContact.id
-        }} @as csr;
-        console.log(csr);
-        csr
+    }} @as csr;
+    console.log(csr);
+    csr
     } else {
         {ContactSearchResult {
             contactFound false
         }} @as csr;
-        csr
+    csr
     }
 }
-
-event createHubspotContact {
+event createHubspotContact
+{
     email String,
     firstName String,
     lastName String
@@ -72,19 +77,36 @@ workflow createHubspotContact {
         first_name createHubspotContact.firstName,
         last_name createHubspotContact.lastName
     }} @as contact;
-
     {ContactSearchResult {
         contactFound true,
         existingContactId contact.id
     }} @as contactResult;
-
     contactResult
 }
+event createMeeting
+{
+    meetingTitle String,
+    meetingBody String,
+    meetingDate String,
+    ownerId String,
+    contactId String
+}
 
-agent filterEmail {
-  llm "sonnet_llm",
-  role "Understand email and analyze for CRM processing decisions.",
-  instruction "You receive a complete message about an email and also, receive information about gmail email owner and hubspot owner id.
+workflow createMeeting {
+    {hubspot/Meeting {
+        meeting_title createMeeting.meetingTitle,
+        meeting_body createMeeting.meetingBody,
+        meeting_date createMeeting.meetingDate,
+        owner createMeeting.ownerId,
+        associated_contacts createMeeting.contactId}
+    }
+}
+
+agent filterEmail
+{
+    llm "sonnet_llm",
+    role "Understand email and analyze for CRM processing decisions.",
+    instruction "You receive a complete message about an email and also, receive information about gmail email owner and hubspot owner id.
 
 Access the email data from the message that was passed to the flow. The email contains
 - sender: string like 'Name <email@domain.com>'
@@ -131,8 +153,8 @@ CRITICAL OUTPUT FORMAT RULES:
 - NEVER use markdown formatting in your response
 - NEVER add JSON formatting with backticks
 - Do NOT add any markdown syntax, language identifiers, or code fences",
-  responseSchema agenticcrm.core/EmailFilterResult,
-  retry classifyRetry
+    retry classifyRetry,
+    responseSchema agenticcrm.core/EmailFilterResult
 }
 
 decision emailShouldBeProcessed {
@@ -144,10 +166,11 @@ decision emailShouldBeProcessed {
   }
 }
 
-agent parseEmailInfo {
-  llm "sonnet_llm",
-  role "Extract contact information and meeting details from EmailFilterResult.",
-  instruction "You have access to understand and parse the data extracted from EmailFilterResult scratchpad.
+agent parseEmailInfo
+{
+    llm "sonnet_llm",
+    role "Extract contact information and meeting details from EmailFilterResult.",
+    instruction "You have access to understand and parse the data extracted from EmailFilterResult scratchpad.
 
 STEP 1: Extract emails and names from the EmailFilterResult scratchpad:
 - From {{EmailFilterResult.emailSender}}: extract email address and name (if 'Name <email>' format, extract both.)
@@ -191,77 +214,45 @@ CRITICAL OUTPUT FORMAT RULES:
 - NEVER use markdown formatting in your response
 - NEVER add JSON formatting with backticks
 - Do NOT add any markdown syntax, language identifiers, or code fences",
-  responseSchema agenticcrm.core/ContactInfo,
-  retry classifyRetry
+    retry classifyRetry,
+    responseSchema agenticcrm.core/ContactInfo
 }
 
 decision contactExistsCheck {
-  case (contactFound == true) {
+      case (contactFound == true) {
     ContactExists
   }
-  case (contactFound == false) {
+case (contactFound == false) {
     ContactNotFound
   }
 }
 
 workflow skipProcessing {
-  {SkipResult {
+    {SkipResult {
     skipped true,
     reason "Email filtered out (automated sender or newsletter)"
   }}
 }
 
-agent createMeeting {
-  llm "sonnet_llm",
-  role "Create a meeting record in HubSpot to log the email interaction.",
-  instruction "STEP 1: Convert {{ContactInfo.meetingDate}} from ISO 8601 to Unix milliseconds.
-Calculate end time as start + 3600000 (1 hour).
-
-STEP 2: Create meeting using hubspot/Meeting with these EXACT fields:
-- meeting_title: use {{ContactInfo.meetingTitle}}
-- meeting_body: use {{ContactInfo.meetingBody}}
-- timestamp: Unix milliseconds as string
-- meeting_outcome: use the string 'COMPLETED'
-- meeting_start_time: Unix milliseconds as string
-- meeting_end_time: start + 3600000 as string (must be a string)
-- owner: use {{EmailFilterResult.hubspotOwnerId}} as string
-- associated_contacts: use {{ContactSearchResult.existingContactId}} as string (this associates the meeting with the contact)
-
-CRITICAL REQUIREMENTS:
-- All timestamp fields (timestamp, meeting_start_time, meeting_end_time) MUST be Unix milliseconds as strings
-- The owner field must be the HubSpot owner ID as a string
-- The associated_contacts field must contain the contact ID from {{ContactSearchResult.existingContactId}}
-- Do NOT skip the associated_contacts field - it's required to link the meeting to the contact in HubSpot
-
-CRITICAL OUTPUT FORMAT RULES:
-- NEVER wrap your response in markdown code blocks (``` or ``)
-- NEVER use markdown formatting in your response
-- NEVER add JSON formatting with backticks
-- Do NOT add any markdown syntax, language identifiers, or code fences",
-  retry classifyRetry,
-  tools [hubspot/Meeting]
-}
-
 flow crmManager {
-  filterEmail --> emailShouldBeProcessed
-  emailShouldBeProcessed --> "SkipEmail" skipProcessing
-  emailShouldBeProcessed --> "ProcessEmail" parseEmailInfo
-  parseEmailInfo --> {findContactByEmail {email parseEmailInfo.contactEmail}}
-  findContactByEmail --> contactExistsCheck
-  contactExistsCheck --> "ContactExists" createMeeting
-  contactExistsCheck --> "ContactNotFound" {createHubspotContact {email parseEmailInfo.contactEmail, firstName parseEmailInfo.contactFirstName, lastName parseEmailInfo.contactLastName}}
-  createHubspotContact --> createMeeting
-}
-
-@public agent crmManager {
-  llm "gpt_llm",
-  role "You coordinate the complete CRM workflow: filter the email, extract contact and meeting information, find or create the contact in HubSpot, and create the meeting with proper associations."
+ filterEmail --> emailShouldBeProcessed
+emailShouldBeProcessed --> "SkipEmail" skipProcessing
+emailShouldBeProcessed --> "ProcessEmail" parseEmailInfo
+parseEmailInfo --> {findContactByEmail {email parseEmailInfo.contactEmail}}
+findContactByEmail --> contactExistsCheck
+contactExistsCheck --> "ContactExists" {createMeeting {meetingTitle parseEmailInfo.meetingTitle, meetingBody parseEmailInfo.meetingBody, meetingDate parseEmailInfo.meetingDate, ownerId EmailFilterResult.hubspotOwnerId, contactId ContactSearchResult.existingContactId}}
+contactExistsCheck --> "ContactNotFound" {createHubspotContact {email parseEmailInfo.contactEmail, firstName parseEmailInfo.contactFirstName, lastName parseEmailInfo.contactLastName}}
+createHubspotContact --> {createMeeting {meetingTitle parseEmailInfo.meetingTitle, meetingBody parseEmailInfo.meetingBody, meetingDate parseEmailInfo.meetingDate, ownerId EmailFilterResult.hubspotOwnerId, contactId ContactSearchResult.existingContactId}}
+    }
+@public agent crmManager
+{
+    llm "gpt_llm",
+    role "You coordinate the complete CRM workflow: filter the email, extract contact and meeting information, find or create the contact in HubSpot, and create the meeting with proper associations."
 }
 
 workflow @after create:gmail/Email {
     {CRMConfig? {}} @as [crmConfig];
     "Email sender is: " + gmail/Email.sender + " Email recipients are: " + gmail/Email.recipients + " Email date is: " + gmail/Email.date + " Email subject is: " + gmail/Email.subject + " Email body is: " + gmail/Email.body + " Email thread_id is: " + gmail/Email.thread_id + " Gmail main owner email is: " + crmConfig.gmailEmail + " Hubspot Owner id is: " + crmConfig.ownerId  @as completeMessage;
-
     console.log(completeMessage);
     {crmManager {message completeMessage}}
 }
